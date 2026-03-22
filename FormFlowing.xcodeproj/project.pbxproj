@@ -32,7 +32,7 @@
 		13C0C54459BB0A273CF8A037 /* TrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingView.swift; sourceTree = "<group>"; };
 		152DDE81B2D0426FC1633D0F /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
 		1DE1915FB47FC07A4A6C2CB0 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		66EB883FEDADD1FDEE120C01 /* FormFlowing.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FormFlowing.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		66EB883FEDADD1FDEE120C01 /* FormFlowing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FormFlowing.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E073ABC0343DAB02AB97464 /* FormFlowingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormFlowingApp.swift; sourceTree = "<group>"; };
 		73F6596FC4C26B3B87E4327C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8D9C57982965E1564AE86877 /* ActivitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesView.swift; sourceTree = "<group>"; };
@@ -226,8 +226,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = C27FE1A98F2138DF5D63771A /* Build configuration list for PBXProject "FormFlowing" */;
 			developmentRegion = en;
@@ -349,6 +347,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = K2UVHB9M82;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowArbitraryLoads = YES;
@@ -438,6 +437,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = K2UVHB9M82;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowArbitraryLoads = YES;

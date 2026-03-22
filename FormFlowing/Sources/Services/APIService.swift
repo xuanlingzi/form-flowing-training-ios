@@ -6,7 +6,7 @@ class APIService {
     
     // TODO: 替换为实际 API 地址（生产环境）
     // 开发调试时使用本机地址
-    #if DEBUG
+    #if targetEnvironment(simulator)
     private let baseURL = "http://localhost:8000/api"
     #else
     private let baseURL = "https://api.formflowing.com/api"
