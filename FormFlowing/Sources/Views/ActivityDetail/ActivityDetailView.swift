@@ -23,48 +23,52 @@ struct ActivityDetailView: View {
     }
     
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            if loading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("加载活动数据...").font(.caption).foregroundColor(.secondary)
+        GeometryReader { geometry in
+            ScrollView(.vertical, showsIndicators: false) {
+                if loading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("加载活动数据...").font(.caption).foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity).padding(.top, 120)
+                } else if let act = activity {
+                    VStack(spacing: 16) {
+                        // GPS 轨迹地图
+                        if hasGPSData {
+                            mapSection
+                        }
+                        
+                        // 顶部 hero card
+                        heroCard(act)
+                        
+                        // 详细指标
+                        metricsGrid(act)
+                        
+                        // 图表
+                        if !records.isEmpty {
+                            chartsSection
+                        }
+                        
+                        // 分圈
+                        if laps.count > 1 {
+                            lapsSection
+                        }
+                        
+                        // AI 分析
+                        if let analysis = analysis {
+                            aiSection(analysis)
+                        }
+                        
+                        // 触发分析按钮
+                        analyzeButton
+                    }
+                    .padding(20)
+                    .frame(width: geometry.size.width)
+                    .clipped()
+                    .opacity(appear ? 1 : 0)
+                    .offset(y: appear ? 0 : 15)
+                    .animation(.easeOut(duration: 0.5), value: appear)
                 }
-                .frame(maxWidth: .infinity).padding(.top, 120)
-            } else if let act = activity {
-                VStack(spacing: 16) {
-                    // GPS 轨迹地图
-                    if hasGPSData {
-                        mapSection
-                    }
-                    
-                    // 顶部 hero card
-                    heroCard(act)
-                    
-                    // 详细指标
-                    metricsGrid(act)
-                    
-                    // 图表
-                    if !records.isEmpty {
-                        chartsSection
-                    }
-                    
-                    // 分圈
-                    if laps.count > 1 {
-                        lapsSection
-                    }
-                    
-                    // AI 分析
-                    if let analysis = analysis {
-                        aiSection(analysis)
-                    }
-                    
-                    // 触发分析按钮
-                    analyzeButton
-                }
-                .padding(20)
-                .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 15)
-                .animation(.easeOut(duration: 0.5), value: appear)
             }
         }
         .background(
