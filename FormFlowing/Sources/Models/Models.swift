@@ -21,6 +21,43 @@ struct AccountInfo: Codable {
     let syncCnGlobal: Bool?
     let syncToStrava: Bool?
     let stravaConnected: Bool?
+    let igpsportConfigured: Bool?
+    let igpsportUsername: String?
+    let intervalsConfigured: Bool?
+    let intervalsUserId: String?
+}
+
+// MARK: - Platform Status
+
+struct PlatformStatus: Codable, Identifiable {
+    var id: String { platform }
+    let platform: String
+    let configured: Bool
+    let connected: Bool
+    let message: String
+}
+
+struct AccountStatusResponse: Codable {
+    let platforms: [PlatformStatus]
+}
+
+// MARK: - iGPSport Config
+
+struct IGPSportConfigResponse: Codable {
+    let configured: Bool
+    let username: String?
+    let connected: Bool
+    let message: String?
+}
+
+// MARK: - Intervals.icu Config
+
+struct IntervalsConfigResponse: Codable {
+    let configured: Bool
+    let userId: String?
+    let connected: Bool
+    let athleteName: String?
+    let message: String?
 }
 
 // MARK: - Profile

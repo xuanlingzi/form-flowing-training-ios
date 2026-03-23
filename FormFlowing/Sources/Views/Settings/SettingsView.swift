@@ -16,6 +16,21 @@ struct SettingsView: View {
     @State private var syncToStrava = false
     @State private var stravaConnected = false
     
+    // iGPSport
+    @State private var igpsUsername = ""
+    @State private var igpsPassword = ""
+    @State private var igpsToken = ""
+    @State private var igpsConfigured = false
+    
+    // Intervals.icu
+    @State private var intervalsUserId = ""
+    @State private var intervalsApiKey = ""
+    @State private var intervalsConfigured = false
+    
+    // 连接状态
+    @State private var platformStatuses: [PlatformStatus] = []
+    @State private var statusLoading = false
+    
     // 密码
     @State private var oldPwd = ""
     @State private var newPwd = ""
@@ -44,31 +59,28 @@ struct SettingsView: View {
                         .cornerRadius(12)
                     }
                     
-                    // Profile Tab
-                    if activeTab == "profile" {
-                        profileTab
-                    }
-                    
-                    // Garmin Tab
-                    if activeTab == "garmin" {
-                        garminTab
-                    }
-                    
-                    // Password Tab
-                    if activeTab == "password" {
-                        passwordTab
-                    }
-
+                    if activeTab == "profile" { profileTab }
+                    if activeTab == "garmin" { garminTab }
+                    if activeTab == "platforms" { platformsTab }
+                    if activeTab == "status" { statusTab }
+                    if activeTab == "password" { passwordTab }
                 }
                 .padding()
             }
             .safeAreaInset(edge: .top) {
-                HStack(spacing: 4) {
-                    TabButton(title: "个人档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
-                    TabButton(title: "Garmin", icon: "applewatch", active: activeTab == "garmin") { activeTab = "garmin" }
-                    TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        TabButton(title: "档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
+                        TabButton(title: "Garmin", icon: "applewatch", active: activeTab == "garmin") { activeTab = "garmin" }
+                        TabButton(title: "第三方", icon: "bicycle", active: activeTab == "platforms") { activeTab = "platforms" }
+                        TabButton(title: "状态", icon: "wifi", active: activeTab == "status") {
+                            activeTab = "status"
+                            if platformStatuses.isEmpty { loadPlatformStatus() }
+                        }
+                        TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
+                    }
+                    .padding(4)
                 }
-                .padding(4)
                 .background(Color(UIColor.systemGray5))
                 .cornerRadius(14)
                 .padding(.horizontal, 16)
@@ -329,6 +341,206 @@ struct SettingsView: View {
         return "每 \(mins) 分钟 自动同步一次"
     }
     
+    // MARK: - Platforms Tab (iGPSport + Intervals.icu)
+    
+    var platformsTab: some View {
+        VStack(spacing: 16) {
+            // iGPSport
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "bicycle").font(.title2).foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("iGPSport").font(.headline)
+                        Text("配置 iGPSport 账号以同步活动数据").font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if igpsConfigured {
+                        Text("已配置")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.green.opacity(0.1)).cornerRadius(8)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    FormField(label: "用户名", value: $igpsUsername, placeholder: "手机号或邮箱")
+                    FormField(label: "密码", value: $igpsPassword, isSecure: true, placeholder: "留空则不修改")
+                    
+                    HStack {
+                        VStack { Divider() }
+                        Text("或").font(.caption2).foregroundColor(.secondary)
+                        VStack { Divider() }
+                    }
+                    
+                    FormField(label: "手动 Bearer Token", value: $igpsToken, placeholder: "无法登录时手动填入")
+                }
+                .padding(14).background(Color.green.opacity(0.05)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.2), lineWidth: 1))
+                
+                HStack(spacing: 10) {
+                    Button(action: saveIGPSport) {
+                        HStack {
+                            if saving { ProgressView().tint(.white) }
+                            Image(systemName: "square.and.arrow.down")
+                            Text("保存并验证")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.green)
+                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
+                    }
+                    .disabled(saving)
+                    
+                    if igpsConfigured {
+                        Button(action: clearIGPSport) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(12)
+                                .background(Color.red.opacity(0.1)).cornerRadius(12)
+                        }
+                        .disabled(saving)
+                    }
+                }
+            }
+            .padding(16).background(.white).cornerRadius(16)
+            
+            // Intervals.icu
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "chart.bar.fill").font(.title2).foregroundColor(.indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Intervals.icu").font(.headline)
+                        Text("配置 Intervals.icu 以获取训练计划数据").font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if intervalsConfigured {
+                        Text("已配置")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.indigo)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.indigo.opacity(0.1)).cornerRadius(8)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    FormField(label: "Athlete ID", value: $intervalsUserId, placeholder: "如 i12345")
+                    Text("在 Intervals.icu → Settings → Developer 中可找到")
+                        .font(.caption2).foregroundColor(.secondary)
+                    FormField(label: "API Key", value: $intervalsApiKey, isSecure: true, placeholder: "留空则不修改")
+                    Text("在 Intervals.icu → Settings → Developer → API Key 生成")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(14).background(Color.indigo.opacity(0.05)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.indigo.opacity(0.2), lineWidth: 1))
+                
+                HStack(spacing: 10) {
+                    Button(action: saveIntervals) {
+                        HStack {
+                            if saving { ProgressView().tint(.white) }
+                            Image(systemName: "square.and.arrow.down")
+                            Text("保存并验证")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.indigo)
+                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
+                    }
+                    .disabled(saving)
+                    
+                    if intervalsConfigured {
+                        Button(action: clearIntervals) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(12)
+                                .background(Color.red.opacity(0.1)).cornerRadius(12)
+                        }
+                        .disabled(saving)
+                    }
+                }
+            }
+            .padding(16).background(.white).cornerRadius(16)
+        }
+    }
+    
+    // MARK: - Connection Status Tab
+    
+    var statusTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "wifi").font(.title2).foregroundColor(.cyan)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("平台连接状态").font(.headline)
+                    Text("实时检测各平台的连接是否正常").font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(action: loadPlatformStatus) {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundColor(statusLoading ? .secondary : .cyan)
+                        .rotationEffect(.degrees(statusLoading ? 360 : 0))
+                        .animation(statusLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: statusLoading)
+                }
+                .disabled(statusLoading)
+            }
+            
+            if statusLoading && platformStatuses.isEmpty {
+                HStack {
+                    ProgressView()
+                    Text("正在检测各平台连接...").font(.caption).foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+            } else if platformStatuses.isEmpty {
+                Text("点击刷新按钮检测连接状态")
+                    .font(.caption).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 30)
+            } else {
+                ForEach(platformStatuses) { p in
+                    HStack(spacing: 12) {
+                        Text(platformIcon(p.platform))
+                            .font(.title2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(platformLabel(p.platform))
+                                .font(.subheadline.weight(.medium))
+                            Text(p.message)
+                                .font(.caption2)
+                                .foregroundColor(
+                                    !p.configured ? .secondary :
+                                        p.connected ? .green : .red
+                                )
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        if !p.configured {
+                            Text("未配置")
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color(UIColor.systemGray5)).cornerRadius(8)
+                        } else if p.connected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green).font(.title3)
+                        } else {
+                            Image(systemName: "wifi.slash")
+                                .foregroundColor(.red).font(.title3)
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        !p.configured ? Color(UIColor.systemGray6) :
+                            p.connected ? Color.green.opacity(0.05) : Color.red.opacity(0.05)
+                    )
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                        !p.configured ? Color(UIColor.systemGray4) :
+                            p.connected ? Color.green.opacity(0.2) : Color.red.opacity(0.2),
+                        lineWidth: 1
+                    ))
+                }
+            }
+        }
+        .padding(16).background(.white).cornerRadius(16)
+    }
+    
     // MARK: - Password Tab
     
     var passwordTab: some View {
@@ -378,6 +590,30 @@ struct SettingsView: View {
         .padding(16).background(.white).cornerRadius(16)
     }
     
+    // MARK: - Helpers
+    
+    private func platformIcon(_ platform: String) -> String {
+        switch platform {
+        case "garmin_cn": return "🇨🇳"
+        case "garmin_global": return "🌍"
+        case "igpsport": return "🚴"
+        case "intervals": return "📊"
+        case "strava": return "🏃"
+        default: return "🔗"
+        }
+    }
+    
+    private func platformLabel(_ platform: String) -> String {
+        switch platform {
+        case "garmin_cn": return "佳明中国区"
+        case "garmin_global": return "Garmin Global"
+        case "igpsport": return "iGPSport"
+        case "intervals": return "Intervals.icu"
+        case "strava": return "Strava"
+        default: return platform
+        }
+    }
+    
     // MARK: - Data
     
     private func loadData() async {
@@ -394,10 +630,32 @@ struct SettingsView: View {
                 syncCnGlobal = accountRes?.syncCnGlobal ?? true
                 syncToStrava = accountRes?.syncToStrava ?? false
                 stravaConnected = accountRes?.stravaConnected ?? false
+                igpsConfigured = accountRes?.igpsportConfigured ?? false
+                igpsUsername = accountRes?.igpsportUsername ?? ""
+                intervalsConfigured = accountRes?.intervalsConfigured ?? false
+                intervalsUserId = accountRes?.intervalsUserId ?? ""
                 trainingGoalContent = goalRes?.content ?? ""
                 trainingGoalUpdatedAt = goalRes?.updatedAt
             }
         } catch {}
+    }
+    
+    private func loadPlatformStatus() {
+        statusLoading = true
+        Task {
+            do {
+                let res = try await APIService.shared.getAccountStatus()
+                await MainActor.run {
+                    platformStatuses = res.platforms
+                    statusLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    platformStatuses = []
+                    statusLoading = false
+                }
+            }
+        }
     }
     
     private func saveProfile() {
@@ -447,6 +705,87 @@ struct SettingsView: View {
                 }
             } catch {
                 await MainActor.run { message = ("error", error.localizedDescription); saving = false }
+            }
+        }
+    }
+    
+    private func saveIGPSport() {
+        saving = true; message = nil
+        Task {
+            do {
+                var data: [String: Any] = [:]
+                if !igpsToken.isEmpty {
+                    data["token"] = igpsToken
+                } else {
+                    data["username"] = igpsUsername
+                    data["password"] = igpsPassword
+                }
+                let res = try await APIService.shared.updateIGPSportConfig(data)
+                await MainActor.run {
+                    igpsConfigured = res.configured
+                    if let u = res.username { igpsUsername = u }
+                    message = (res.connected ? "success" : "error",
+                               res.message ?? (res.connected ? "iGPSport 连接成功" : "保存成功但连接失败"))
+                    igpsPassword = ""; igpsToken = ""
+                    saving = false
+                }
+            } catch {
+                await MainActor.run { message = ("error", error.localizedDescription); saving = false }
+            }
+        }
+    }
+    
+    private func clearIGPSport() {
+        saving = true
+        Task {
+            do {
+                try await APIService.shared.clearIGPSportConfig()
+                await MainActor.run {
+                    igpsConfigured = false; igpsUsername = ""
+                    message = ("success", "iGPSport 配置已清除")
+                    saving = false
+                }
+            } catch {
+                await MainActor.run { message = ("error", "清除失败"); saving = false }
+            }
+        }
+    }
+    
+    private func saveIntervals() {
+        saving = true; message = nil
+        Task {
+            do {
+                let res = try await APIService.shared.updateIntervalsConfig(
+                    userId: intervalsUserId, apiKey: intervalsApiKey)
+                await MainActor.run {
+                    intervalsConfigured = res.configured
+                    if let u = res.userId { intervalsUserId = u }
+                    let name = res.athleteName ?? ""
+                    message = (res.connected ? "success" : "error",
+                               res.message ?? (res.connected
+                                               ? "Intervals.icu 已连接\(!name.isEmpty ? ": \(name)" : "")"
+                                               : "保存成功但连接失败"))
+                    intervalsApiKey = ""
+                    saving = false
+                }
+            } catch {
+                await MainActor.run { message = ("error", error.localizedDescription); saving = false }
+            }
+        }
+    }
+    
+    private func clearIntervals() {
+        saving = true
+        Task {
+            do {
+                try await APIService.shared.clearIntervalsConfig()
+                await MainActor.run {
+                    intervalsConfigured = false; intervalsUserId = ""
+                    message = ("success", "Intervals.icu 配置已清除")
+                    saving = false
+                }
+            } catch {
+                await MainActor.run { message = ("error", "清除失败"); saving = false }
             }
         }
     }
@@ -521,6 +860,7 @@ struct TabButton: View {
             .foregroundColor(active ? .primary : .secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
+            .padding(.horizontal, 8)
             .background(active ? Color.white : Color.clear)
             .cornerRadius(10)
         }

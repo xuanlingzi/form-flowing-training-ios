@@ -147,6 +147,10 @@ class APIService {
         ])
     }
     
+    func getAccountStatus() async throws -> AccountStatusResponse {
+        return try await request("/account/status")
+    }
+    
     // MARK: - 活动
     
     func getActivities(page: Int = 1, pageSize: Int = 20, sport: String? = nil) async throws -> [ActivityListItem] {
@@ -225,6 +229,37 @@ class APIService {
     
     func disconnectStrava() async throws {
         try await requestVoid("/strava/disconnect")
+    }
+    
+    // MARK: - iGPSport
+    
+    func getIGPSportConfig() async throws -> IGPSportConfigResponse {
+        return try await request("/igpsport/config")
+    }
+    
+    func updateIGPSportConfig(_ data: [String: Any]) async throws -> IGPSportConfigResponse {
+        return try await request("/igpsport/config", method: "PUT", body: data)
+    }
+    
+    func clearIGPSportConfig() async throws {
+        try await requestVoid("/igpsport/config", method: "DELETE")
+    }
+    
+    // MARK: - Intervals.icu
+    
+    func getIntervalsConfig() async throws -> IntervalsConfigResponse {
+        return try await request("/intervals/config")
+    }
+    
+    func updateIntervalsConfig(userId: String, apiKey: String) async throws -> IntervalsConfigResponse {
+        return try await request("/intervals/config", method: "PUT", body: [
+            "user_id": userId,
+            "api_key": apiKey
+        ])
+    }
+    
+    func clearIntervalsConfig() async throws {
+        try await requestVoid("/intervals/config", method: "DELETE")
     }
     
     // MARK: - 训练目标/生成
