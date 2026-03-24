@@ -1,9 +1,9 @@
 import Foundation
 
 /// API 服务层 — 与前端 api.ts 1:1 对应
-class APIService {
+final class APIService {
     static let shared = APIService()
-    
+
     // TODO: 替换为实际 API 地址（生产环境）
     // 开发调试时使用本机地址
     #if targetEnvironment(simulator)
@@ -11,49 +11,31 @@ class APIService {
     #else
     private let baseURL = "https://api.formflowing.com/api"
     #endif
-    
+
+    private let tokenRefreshCoordinator = TokenRefreshCoordinator()
+
     private var token: String {
         UserDefaults.standard.string(forKey: "access_token") ?? ""
     }
-    
+
     // MARK: - 通用请求方法
-    
+
     private func request<T: Decodable>(
         _ path: String,
         method: String = "GET",
         body: [String: Any]? = nil,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 30,
+        requiresAuth: Bool = true
     ) async throws -> T {
-        guard let url = URL(string: "\(baseURL)\(path)") else {
-            throw APIError.invalidURL
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = timeout
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        
-        if let body = body {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        
-        if httpResponse.statusCode == 401 {
-            DispatchQueue.main.async {
-                AuthManager().logout() // Token 过期
-            }
-            throw APIError.unauthorized
-        }
-        
+        let request = try await makeRequest(
+            path: path,
+            method: method,
+            body: body,
+            timeout: timeout,
+            requiresAuth: requiresAuth
+        )
+        let (data, httpResponse) = try await send(request, retryOnUnauthorized: requiresAuth)
+
         guard (200...299).contains(httpResponse.statusCode) else {
             let detail = try? JSONDecoder().decode(ErrorDetail.self, from: data)
             throw APIError.serverError(httpResponse.statusCode, detail?.detail ?? "请求失败")
@@ -68,48 +50,143 @@ class APIService {
         _ path: String,
         method: String = "POST",
         body: [String: Any]? = nil,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 30,
+        requiresAuth: Bool = true
     ) async throws {
-        guard let url = URL(string: "\(baseURL)\(path)") else {
-            throw APIError.invalidURL
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = timeout
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        
-        if let body = body {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        
-        if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
-        }
-        
+        let request = try await makeRequest(
+            path: path,
+            method: method,
+            body: body,
+            timeout: timeout,
+            requiresAuth: requiresAuth
+        )
+        let (_, httpResponse) = try await send(request, retryOnUnauthorized: requiresAuth)
+
         guard (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError(httpResponse.statusCode, "请求失败")
         }
     }
-    
-    // MARK: - 认证
-    
-    func login(username: String, password: String) async throws -> LoginResponse {
-        return try await request("/auth/login", method: "POST", body: ["username": username, "password": password])
+
+    private func makeRequest(
+        path: String,
+        method: String,
+        body: [String: Any]? = nil,
+        timeout: TimeInterval,
+        requiresAuth: Bool,
+        contentType: String = "application/json"
+    ) async throws -> URLRequest {
+        guard let url = URL(string: "\(baseURL)\(path)") else {
+            throw APIError.invalidURL
+        }
+
+        if requiresAuth {
+            try await refreshAccessTokenIfNeeded()
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+
+        if requiresAuth, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+
+        return request
     }
-    
+
+    private func send(_ request: URLRequest, retryOnUnauthorized: Bool) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 401 else {
+            return (data, httpResponse)
+        }
+
+        guard retryOnUnauthorized else {
+            await AuthManager.shared.logout()
+            throw APIError.unauthorized
+        }
+
+        do {
+            let refreshedToken = try await forceRefreshAccessToken()
+            var retryRequest = request
+            retryRequest.setValue("Bearer \(refreshedToken)", forHTTPHeaderField: "Authorization")
+
+            let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+            guard let retryHTTPResponse = retryResponse as? HTTPURLResponse else {
+                throw APIError.invalidResponse
+            }
+
+            if retryHTTPResponse.statusCode == 401 {
+                await AuthManager.shared.logout()
+                throw APIError.unauthorized
+            }
+
+            return (retryData, retryHTTPResponse)
+        } catch {
+            await AuthManager.shared.logout()
+            throw APIError.unauthorized
+        }
+    }
+
+    private func refreshAccessTokenIfNeeded() async throws {
+        let shouldRefresh = await MainActor.run {
+            AuthManager.shared.isAuthenticated && AuthManager.shared.shouldRefreshToken()
+        }
+        guard shouldRefresh else { return }
+        _ = try await forceRefreshAccessToken()
+    }
+
+    private func forceRefreshAccessToken() async throws -> String {
+        try await tokenRefreshCoordinator.refreshToken {
+            guard let credentials = await MainActor.run(body: {
+                AuthManager.shared.storedCredentials()
+            }) else {
+                throw APIError.unauthorized
+            }
+
+            let response = try await self.login(
+                username: credentials.username,
+                password: credentials.password,
+                requiresAuth: false
+            )
+
+            await AuthManager.shared.login(
+                token: response.accessToken,
+                username: credentials.username,
+                password: credentials.password
+            )
+
+            return response.accessToken
+        }
+    }
+
+    // MARK: - 认证
+
+    func login(username: String, password: String, requiresAuth: Bool = false) async throws -> LoginResponse {
+        return try await request(
+            "/auth/login",
+            method: "POST",
+            body: ["username": username, "password": password],
+            requiresAuth: requiresAuth
+        )
+    }
+
     func register(username: String, password: String) async throws -> LoginResponse {
-        return try await request("/auth/register", method: "POST", body: ["username": username, "password": password])
+        return try await request(
+            "/auth/register",
+            method: "POST",
+            body: ["username": username, "password": password],
+            requiresAuth: false
+        )
     }
     
     // MARK: - 个人档案 & Garmin 状态
@@ -281,20 +358,19 @@ class APIService {
     }
     
     // MARK: - 文件上传
-    
+
     func uploadActivity(fileURL: URL) async throws -> UploadResponse {
-        let url = URL(string: "\(baseURL)/activity/upload")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 120
-        
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        
+        var request = try await makeRequest(
+            path: "/activity/upload",
+            method: "POST",
+            timeout: 120,
+            requiresAuth: true,
+            contentType: "multipart/form-data"
+        )
+
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
+
         let fileData = try Data(contentsOf: fileURL)
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -303,12 +379,12 @@ class APIService {
         body.append(fileData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError(0, "上传失败")
+
+        let (data, httpResponse) = try await send(request, retryOnUnauthorized: true)
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(httpResponse.statusCode, "上传失败")
         }
+
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(UploadResponse.self, from: data)
@@ -335,4 +411,22 @@ enum APIError: LocalizedError {
 
 struct ErrorDetail: Codable {
     let detail: String?
+}
+
+actor TokenRefreshCoordinator {
+    private var refreshTask: Task<String, Error>?
+
+    func refreshToken(using operation: @escaping @Sendable () async throws -> String) async throws -> String {
+        if let refreshTask {
+            return try await refreshTask.value
+        }
+
+        let refreshTask = Task {
+            try await operation()
+        }
+        self.refreshTask = refreshTask
+        defer { self.refreshTask = nil }
+
+        return try await refreshTask.value
+    }
 }

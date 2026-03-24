@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct FormFlowingApp: App {
-    @StateObject private var authManager = AuthManager()
+    @StateObject private var authManager = AuthManager.shared
     
     var body: some Scene {
         WindowGroup {

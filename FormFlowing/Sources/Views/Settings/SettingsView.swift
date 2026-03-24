@@ -66,14 +66,13 @@ struct SettingsView: View {
                 .padding()
             }
             .safeAreaInset(edge: .top) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        TabButton(title: "档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
-                        TabButton(title: "数据源", icon: "antenna.radiowaves.left.and.right", active: activeTab == "datasources") { activeTab = "datasources" }
-                        TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
-                    }
-                    .padding(4)
+                HStack(spacing: 4) {
+                    TabButton(title: "档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
+                    TabButton(title: "数据源", icon: "antenna.radiowaves.left.and.right", active: activeTab == "datasources") { activeTab = "datasources" }
+                    TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(4)
                 .background(Color(UIColor.systemGray5))
                 .cornerRadius(14)
                 .padding(.horizontal, 16)

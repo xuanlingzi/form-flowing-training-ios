@@ -5,6 +5,7 @@ DerivedData/
 *.xcuserdata/
 *.xcworkspace/xcuserdata/
 xcuserdata/
+.codex-cache/
 
 # Swift Package Manager
 .build/
