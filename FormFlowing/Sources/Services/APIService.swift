@@ -13,6 +13,11 @@ final class APIService {
     #endif
 
     private let tokenRefreshCoordinator = TokenRefreshCoordinator()
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
 
     private var token: String {
         UserDefaults.standard.string(forKey: "access_token") ?? ""
@@ -37,13 +42,10 @@ final class APIService {
         let (data, httpResponse) = try await send(request, retryOnUnauthorized: requiresAuth)
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let detail = try? JSONDecoder().decode(ErrorDetail.self, from: data)
-            throw APIError.serverError(httpResponse.statusCode, detail?.detail ?? "请求失败")
+            throw serverError(statusCode: httpResponse.statusCode, data: data, fallback: "请求失败")
         }
-        
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(T.self, from: data)
+
+        return try decodeResponse(T.self, from: data)
     }
     
     private func requestVoid(
@@ -60,10 +62,10 @@ final class APIService {
             timeout: timeout,
             requiresAuth: requiresAuth
         )
-        let (_, httpResponse) = try await send(request, retryOnUnauthorized: requiresAuth)
+        let (data, httpResponse) = try await send(request, retryOnUnauthorized: requiresAuth)
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError(httpResponse.statusCode, "请求失败")
+            throw serverError(statusCode: httpResponse.statusCode, data: data, fallback: "请求失败")
         }
     }
 
@@ -382,12 +384,34 @@ final class APIService {
 
         let (data, httpResponse) = try await send(request, retryOnUnauthorized: true)
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError(httpResponse.statusCode, "上传失败")
+            throw serverError(statusCode: httpResponse.statusCode, data: data, fallback: "上传失败")
         }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(UploadResponse.self, from: data)
+        return try decodeResponse(UploadResponse.self, from: data)
+    }
+
+    private func decodeResponse<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        do {
+            return try decoder.decode(type, from: data)
+        } catch {
+            throw APIError.decodingFailed(error.localizedDescription)
+        }
+    }
+
+    private func serverError(statusCode: Int, data: Data, fallback: String) -> APIError {
+        if let detail = try? decoder.decode(ErrorDetail.self, from: data),
+           let message = detail.detail,
+           !message.isEmpty {
+            return .serverError(statusCode, message)
+        }
+
+        if let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return .serverError(statusCode, text)
+        }
+
+        return .serverError(statusCode, fallback)
     }
 }
 
@@ -398,6 +422,7 @@ enum APIError: LocalizedError {
     case invalidResponse
     case unauthorized
     case serverError(Int, String)
+    case decodingFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -405,6 +430,7 @@ enum APIError: LocalizedError {
         case .invalidResponse: return "无效的响应"
         case .unauthorized: return "登录已过期"
         case .serverError(_, let message): return message
+        case .decodingFailed(let message): return "响应解析失败: \(message)"
         }
     }
 }
