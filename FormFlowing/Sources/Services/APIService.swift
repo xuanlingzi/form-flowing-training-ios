@@ -151,6 +151,10 @@ class APIService {
         return try await request("/account/status")
     }
     
+    func clearGarmin(region: String) async throws {
+        try await requestVoid("/account/garmin/\(region)", method: "DELETE")
+    }
+    
     // MARK: - 活动
     
     func getActivities(page: Int = 1, pageSize: Int = 20, sport: String? = nil) async throws -> [ActivityListItem] {

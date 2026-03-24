@@ -60,9 +60,7 @@ struct SettingsView: View {
                     }
                     
                     if activeTab == "profile" { profileTab }
-                    if activeTab == "garmin" { garminTab }
-                    if activeTab == "platforms" { platformsTab }
-                    if activeTab == "status" { statusTab }
+                    if activeTab == "datasources" { dataSourcesTab }
                     if activeTab == "password" { passwordTab }
                 }
                 .padding()
@@ -71,12 +69,7 @@ struct SettingsView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         TabButton(title: "档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
-                        TabButton(title: "Garmin", icon: "applewatch", active: activeTab == "garmin") { activeTab = "garmin" }
-                        TabButton(title: "第三方", icon: "bicycle", active: activeTab == "platforms") { activeTab = "platforms" }
-                        TabButton(title: "状态", icon: "wifi", active: activeTab == "status") {
-                            activeTab = "status"
-                            if platformStatuses.isEmpty { loadPlatformStatus() }
-                        }
+                        TabButton(title: "数据源", icon: "antenna.radiowaves.left.and.right", active: activeTab == "datasources") { activeTab = "datasources" }
                         TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
                     }
                     .padding(4)
@@ -207,160 +200,130 @@ struct SettingsView: View {
         .padding(16).background(.white).cornerRadius(16)
     }
     
-    // MARK: - Garmin Tab
+    // MARK: - Data Sources Tab (merged: Garmin + iGPSport + Intervals + Strava + Sync)
     
-    var garminTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "applewatch").font(.title2).foregroundColor(.teal)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Garmin 账号配置").font(.headline)
-                    Text("填写中国区和国际区的 Garmin 账号信息").font(.caption).foregroundColor(.secondary)
-                }
-            }
-            
-            // CN 区
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "mappin.circle.fill").foregroundColor(.blue)
-                    Text("佳明中国区 (CN)").font(.subheadline.weight(.semibold)).foregroundColor(.blue)
-                }
-                FormField(label: "中国区用户名（邮箱）", value: $cnUsername, placeholder: "your@email.cn")
-                FormField(label: "中国区密码", value: $cnPassword, isSecure: true, placeholder: "留空则不修改")
-            }
-            .padding(14).background(Color.blue.opacity(0.05)).cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.blue.opacity(0.2), lineWidth: 1))
-            
-            // Global 区
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "globe").foregroundColor(.purple)
-                    Text("Garmin 国际区 (Global)").font(.subheadline.weight(.semibold)).foregroundColor(.purple)
-                }
-                FormField(label: "国际区用户名（邮箱）", value: $globalUsername, placeholder: "your@email.com")
-                FormField(label: "国际区密码", value: $globalPassword, isSecure: true, placeholder: "留空则不修改")
-            }
-            .padding(14).background(Color.purple.opacity(0.05)).cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.2), lineWidth: 1))
-            
-            // 同步选项
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.left.arrow.right").foregroundColor(.secondary)
-                    Text("同步选项").font(.subheadline.weight(.semibold))
+    var dataSourcesTab: some View {
+        VStack(spacing: 16) {
+            // ---- Garmin Card ----
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: "applewatch").font(.title2).foregroundColor(.teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Garmin 账号配置").font(.headline)
+                        Text("填写中国区和国际区的 Garmin 账号信息").font(.caption).foregroundColor(.secondary)
+                    }
                 }
                 
-                // CN/Global 双区同步
+                // CN 区
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin.circle.fill").foregroundColor(.blue)
+                        Text("佳明中国区").font(.subheadline.weight(.semibold)).foregroundColor(.blue)
+                        Spacer()
+                        statusBadgeView(platform: "garmin_cn")
+                    }
+                    FormField(label: "用户名（邮箱）", value: $cnUsername, placeholder: "your@email.cn")
+                    FormField(label: "密码", value: $cnPassword, isSecure: true, placeholder: "留空则不修改")
+                }
+                .padding(14).background(Color.blue.opacity(0.05)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.blue.opacity(0.2), lineWidth: 1))
+                
+                HStack(spacing: 10) {
+                    Button(action: saveGarminCn) {
+                        HStack {
+                            if saving { ProgressView().tint(.white) }
+                            Image(systemName: "square.and.arrow.down")
+                            Text("保存并验证")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.blue)
+                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
+                    }
+                    .disabled(saving)
+                    
+                    if !cnUsername.isEmpty {
+                        Button(action: clearGarminCn) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(12)
+                                .background(Color.red.opacity(0.1)).cornerRadius(12)
+                        }
+                        .disabled(saving)
+                    }
+                }
+                
+                Divider()
+                
+                // Global 区
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe").foregroundColor(.purple)
+                        Text("Garmin Global").font(.subheadline.weight(.semibold)).foregroundColor(.purple)
+                        Spacer()
+                        statusBadgeView(platform: "garmin_global")
+                    }
+                    FormField(label: "用户名（邮箱）", value: $globalUsername, placeholder: "your@email.com")
+                    FormField(label: "密码", value: $globalPassword, isSecure: true, placeholder: "留空则不修改")
+                }
+                .padding(14).background(Color.purple.opacity(0.05)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+                
+                HStack(spacing: 10) {
+                    Button(action: saveGarminGlobal) {
+                        HStack {
+                            if saving { ProgressView().tint(.white) }
+                            Image(systemName: "square.and.arrow.down")
+                            Text("保存并验证")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.purple)
+                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
+                    }
+                    .disabled(saving)
+                    
+                    if !globalUsername.isEmpty {
+                        Button(action: clearGarminGlobal) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .padding(12)
+                                .background(Color.red.opacity(0.1)).cornerRadius(12)
+                        }
+                        .disabled(saving)
+                    }
+                }
+                
+                Divider()
+                
+                // CN/Global 双区同步 Toggle (auto-save)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("CN/Global 双区同步").font(.subheadline.weight(.medium))
                         Text("自动同步中国区和国际区的活动数据").font(.caption2).foregroundColor(.secondary)
                     }
                     Spacer()
-                    Toggle("", isOn: $syncCnGlobal).labelsHidden().tint(.teal)
-                }
-                
-                // Strava 直传
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.circle.fill").font(.caption).foregroundColor(.orange)
-                            Text("自动直传 Strava").font(.subheadline.weight(.medium))
+                    Toggle("", isOn: Binding(
+                        get: { syncCnGlobal },
+                        set: { newVal in
+                            syncCnGlobal = newVal
+                            autoSaveSyncSetting(["sync_cn_global": newVal])
                         }
-                        Text("从 CN 区拉取 FIT 文件直接上传到 Strava").font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: $syncToStrava).labelsHidden().tint(.orange)
-                }
-                
-                if syncToStrava {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                        Text("开启后，请在 Garmin Connect Global 设置中取消 Strava 自动连接，避免活动重复上传。")
-                            .font(.caption2).foregroundColor(.orange)
-                    }
-                    .padding(10).background(Color.orange.opacity(0.1)).cornerRadius(10)
-                    
-                    HStack {
-                        Text(stravaConnected ? "✅ Strava 已连接" : "需要授权 Strava 账号")
-                            .font(.caption)
-                        Spacer()
-                        if stravaConnected {
-                            Button("断开连接") { disconnectStrava() }
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.red)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Color.red.opacity(0.1)).cornerRadius(8)
-                        } else {
-                            Button("连接 Strava") { connectStrava() }
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Color.orange).cornerRadius(8)
-                        }
-                    }
-                }
-                
-                // 同步频率
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock").font(.caption)
-                        Text("同步频率").font(.subheadline.weight(.medium))
-                    }
-                    Slider(value: $syncFrequency, in: 1...1440, step: 1)
-                        .tint(.teal)
-                    Text(syncFrequencyText)
-                        .font(.caption2).foregroundColor(.secondary)
+                    )).labelsHidden().tint(.teal)
                 }
             }
-            .padding(14).background(Color(UIColor.systemGray6)).cornerRadius(14)
+            .padding(16).background(.white).cornerRadius(16)
             
-            Button(action: saveGarmin) {
-                HStack {
-                    if saving { ProgressView().tint(.white) }
-                    Image(systemName: "square.and.arrow.down")
-                    Text("保存配置")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.teal)
-                .foregroundColor(.white).font(.headline).cornerRadius(14)
-            }
-            .disabled(saving)
-        }
-        .padding(16).background(.white).cornerRadius(16)
-    }
-    
-    var syncFrequencyText: String {
-        let mins = Int(syncFrequency)
-        if mins >= 60 {
-            let h = mins / 60
-            let m = mins % 60
-            return "每 \(h) 小时\(m > 0 ? " \(m) 分钟" : "") 自动同步一次"
-        }
-        return "每 \(mins) 分钟 自动同步一次"
-    }
-    
-    // MARK: - Platforms Tab (iGPSport + Intervals.icu)
-    
-    var platformsTab: some View {
-        VStack(spacing: 16) {
-            // iGPSport
+            // ---- iGPSport Card ----
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: "bicycle").font(.title2).foregroundColor(.green)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("iGPSport").font(.headline)
-                        Text("配置 iGPSport 账号以同步活动数据").font(.caption).foregroundColor(.secondary)
+                        Text("iGPSport 活动数据同步").font(.caption).foregroundColor(.secondary)
                     }
                     Spacer()
-                    if igpsConfigured {
-                        Text("已配置")
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.green.opacity(0.1)).cornerRadius(8)
-                    }
+                    statusBadgeView(platform: "igpsport")
                 }
                 
                 VStack(alignment: .leading, spacing: 10) {
@@ -405,22 +368,16 @@ struct SettingsView: View {
             }
             .padding(16).background(.white).cornerRadius(16)
             
-            // Intervals.icu
+            // ---- Intervals.icu Card ----
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: "chart.bar.fill").font(.title2).foregroundColor(.indigo)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Intervals.icu").font(.headline)
-                        Text("配置 Intervals.icu 以获取训练计划数据").font(.caption).foregroundColor(.secondary)
+                        Text("训练计划数据").font(.caption).foregroundColor(.secondary)
                     }
                     Spacer()
-                    if intervalsConfigured {
-                        Text("已配置")
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(.indigo)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.indigo.opacity(0.1)).cornerRadius(8)
-                    }
+                    statusBadgeView(platform: "intervals")
                 }
                 
                 VStack(alignment: .leading, spacing: 10) {
@@ -460,85 +417,133 @@ struct SettingsView: View {
                 }
             }
             .padding(16).background(.white).cornerRadius(16)
+            
+            // ---- Strava Card ----
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.up.circle.fill").font(.title2).foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Strava").font(.headline)
+                        Text("OAuth 授权连接").font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    statusBadgeView(platform: "strava")
+                }
+                
+                HStack {
+                    Text(stravaConnected ? "✅ Strava 已连接" : "需要授权 Strava 账号")
+                        .font(.caption)
+                    Spacer()
+                    if stravaConnected {
+                        Button("断开连接") { disconnectStrava() }
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.red.opacity(0.1)).cornerRadius(8)
+                    } else {
+                        Button("连接 Strava") { connectStrava() }
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.orange).cornerRadius(8)
+                    }
+                }
+                .padding(14).background(Color.orange.opacity(0.05)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+                
+                Divider()
+                
+                // Strava 直传 Toggle (auto-save)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.circle.fill").font(.caption).foregroundColor(.orange)
+                            Text("自动直传 Strava").font(.subheadline.weight(.medium))
+                        }
+                        Text("从 CN 区拉取 FIT 文件直接上传到 Strava").font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { syncToStrava },
+                        set: { newVal in
+                            syncToStrava = newVal
+                            autoSaveSyncSetting(["sync_to_strava": newVal])
+                        }
+                    )).labelsHidden().tint(.orange)
+                }
+                
+                if syncToStrava {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                        Text("开启后，请在 Garmin Connect Global 设置中取消 Strava 自动连接，避免活动重复上传。")
+                            .font(.caption2).foregroundColor(.orange)
+                    }
+                    .padding(10).background(Color.orange.opacity(0.1)).cornerRadius(10)
+                }
+            }
+            .padding(16).background(.white).cornerRadius(16)
+            
+            // ---- Sync Options Card ----
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.left.arrow.right").font(.title2).foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("同步选项").font(.headline)
+                        Text("数据同步规则与频率").font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if saving {
+                        ProgressView().scaleEffect(0.7)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock").font(.caption)
+                        Text("同步频率").font(.subheadline.weight(.medium))
+                    }
+                    Slider(value: Binding(
+                        get: { syncFrequency },
+                        set: { newVal in
+                            syncFrequency = newVal
+                            autoSaveSyncSettingDebounced()
+                        }
+                    ), in: 1...1440, step: 1)
+                        .tint(.teal)
+                    Text(syncFrequencyText)
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(14).background(Color(UIColor.systemGray6)).cornerRadius(14)
+            }
+            .padding(16).background(.white).cornerRadius(16)
         }
     }
     
-    // MARK: - Connection Status Tab
-    
-    var statusTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "wifi").font(.title2).foregroundColor(.cyan)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("平台连接状态").font(.headline)
-                    Text("实时检测各平台的连接是否正常").font(.caption).foregroundColor(.secondary)
-                }
-                Spacer()
-                Button(action: loadPlatformStatus) {
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundColor(statusLoading ? .secondary : .cyan)
-                        .rotationEffect(.degrees(statusLoading ? 360 : 0))
-                        .animation(statusLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: statusLoading)
-                }
-                .disabled(statusLoading)
-            }
-            
-            if statusLoading && platformStatuses.isEmpty {
-                HStack {
-                    ProgressView()
-                    Text("正在检测各平台连接...").font(.caption).foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if platformStatuses.isEmpty {
-                Text("点击刷新按钮检测连接状态")
-                    .font(.caption).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else {
-                ForEach(platformStatuses) { p in
-                    HStack(spacing: 12) {
-                        Text(platformIcon(p.platform))
-                            .font(.title2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(platformLabel(p.platform))
-                                .font(.subheadline.weight(.medium))
-                            Text(p.message)
-                                .font(.caption2)
-                                .foregroundColor(
-                                    !p.configured ? .secondary :
-                                        p.connected ? .green : .red
-                                )
-                                .lineLimit(2)
-                        }
-                        Spacer()
-                        if !p.configured {
-                            Text("未配置")
-                                .font(.caption2.weight(.medium))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                .background(Color(UIColor.systemGray5)).cornerRadius(8)
-                        } else if p.connected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green).font(.title3)
-                        } else {
-                            Image(systemName: "wifi.slash")
-                                .foregroundColor(.red).font(.title3)
-                        }
-                    }
-                    .padding(14)
-                    .background(
-                        !p.configured ? Color(UIColor.systemGray6) :
-                            p.connected ? Color.green.opacity(0.05) : Color.red.opacity(0.05)
-                    )
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(
-                        !p.configured ? Color(UIColor.systemGray4) :
-                            p.connected ? Color.green.opacity(0.2) : Color.red.opacity(0.2),
-                        lineWidth: 1
-                    ))
-                }
+    @ViewBuilder
+    private func statusBadgeView(platform: String) -> some View {
+        if let s = platformStatuses.first(where: { $0.platform == platform }) {
+            if s.configured && s.connected {
+                Text("✓")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.green.opacity(0.1)).cornerRadius(6)
+            } else if s.configured {
+                Image(systemName: "wifi.slash")
+                    .font(.caption2)
+                    .foregroundColor(.red)
             }
         }
-        .padding(16).background(.white).cornerRadius(16)
+    }
+    
+    var syncFrequencyText: String {
+        let mins = Int(syncFrequency)
+        if mins >= 60 {
+            let h = mins / 60
+            let m = mins % 60
+            return "每 \(h) 小时\(m > 0 ? " \(m) 分钟" : "") 自动同步一次"
+        }
+        return "每 \(mins) 分钟 自动同步一次"
     }
     
     // MARK: - Password Tab
@@ -637,6 +642,8 @@ struct SettingsView: View {
                 trainingGoalContent = goalRes?.content ?? ""
                 trainingGoalUpdatedAt = goalRes?.updatedAt
             }
+            // Load platform status after account data is loaded
+            loadPlatformStatus()
         } catch {}
     }
     
@@ -684,29 +691,123 @@ struct SettingsView: View {
         }
     }
     
-    private func saveGarmin() {
+    private func saveGarminCn() {
         saving = true; message = nil
         Task {
             do {
-                var data: [String: Any] = [
-                    "sync_frequency": Int(syncFrequency),
-                    "sync_cn_global": syncCnGlobal,
-                    "sync_to_strava": syncToStrava,
-                ]
+                var data: [String: Any] = [:]
                 if !cnUsername.isEmpty { data["cn_username"] = cnUsername }
                 if !cnPassword.isEmpty { data["cn_password"] = cnPassword }
-                if !globalUsername.isEmpty { data["global_username"] = globalUsername }
-                if !globalPassword.isEmpty { data["global_password"] = globalPassword }
                 try await APIService.shared.updateAccount(data)
+                cnPassword = ""
+                
+                if cnPassword.isEmpty {
+                    // 没有密码变更时先显示保存信息，再验证
+                }
+                
+                await MainActor.run { message = ("success", "账号已保存，正在验证连接…") }
+                
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                let statusRes = try await APIService.shared.getAccountStatus()
+                let s = statusRes.platforms.first(where: { $0.platform == "garmin_cn" })
                 await MainActor.run {
-                    message = ("success", "Garmin 配置已保存")
-                    cnPassword = ""; globalPassword = ""
+                    platformStatuses = statusRes.platforms
+                    if s?.connected == true {
+                        message = ("success", s?.message ?? "连接成功")
+                    } else {
+                        message = ("error", s?.message ?? "连接失败")
+                    }
                     saving = false
                 }
             } catch {
                 await MainActor.run { message = ("error", error.localizedDescription); saving = false }
             }
         }
+    }
+    
+    private func saveGarminGlobal() {
+        saving = true; message = nil
+        Task {
+            do {
+                var data: [String: Any] = [:]
+                if !globalUsername.isEmpty { data["global_username"] = globalUsername }
+                if !globalPassword.isEmpty { data["global_password"] = globalPassword }
+                try await APIService.shared.updateAccount(data)
+                globalPassword = ""
+                
+                await MainActor.run { message = ("success", "账号已保存，正在验证连接…") }
+                
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                let statusRes = try await APIService.shared.getAccountStatus()
+                let s = statusRes.platforms.first(where: { $0.platform == "garmin_global" })
+                await MainActor.run {
+                    platformStatuses = statusRes.platforms
+                    if s?.connected == true {
+                        message = ("success", s?.message ?? "连接成功")
+                    } else {
+                        message = ("error", s?.message ?? "连接失败")
+                    }
+                    saving = false
+                }
+            } catch {
+                await MainActor.run { message = ("error", error.localizedDescription); saving = false }
+            }
+        }
+    }
+    
+    private func clearGarminCn() {
+        saving = true; message = nil
+        Task {
+            do {
+                try await APIService.shared.clearGarmin(region: "cn")
+                await MainActor.run {
+                    cnUsername = ""; cnPassword = ""
+                    message = ("success", "佳明中国区账号已移除")
+                    saving = false
+                }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
+                }
+            } catch {
+                await MainActor.run { message = ("error", "移除失败"); saving = false }
+            }
+        }
+    }
+    
+    private func clearGarminGlobal() {
+        saving = true; message = nil
+        Task {
+            do {
+                try await APIService.shared.clearGarmin(region: "global")
+                await MainActor.run {
+                    globalUsername = ""; globalPassword = ""
+                    message = ("success", "Garmin Global 账号已移除")
+                    saving = false
+                }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
+                }
+            } catch {
+                await MainActor.run { message = ("error", "移除失败"); saving = false }
+            }
+        }
+    }
+    
+    private func autoSaveSyncSetting(_ data: [String: Any]) {
+        Task {
+            do {
+                try await APIService.shared.updateAccount(data)
+            } catch {
+                await MainActor.run { message = ("error", "自动保存失败") }
+            }
+        }
+    }
+    
+    private func autoSaveSyncSettingDebounced() {
+        // Simple immediate save for slider on end
+        autoSaveSyncSetting(["sync_frequency": Int(syncFrequency)])
     }
     
     private func saveIGPSport() {
@@ -729,6 +830,10 @@ struct SettingsView: View {
                     igpsPassword = ""; igpsToken = ""
                     saving = false
                 }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
+                }
             } catch {
                 await MainActor.run { message = ("error", error.localizedDescription); saving = false }
             }
@@ -744,6 +849,10 @@ struct SettingsView: View {
                     igpsConfigured = false; igpsUsername = ""
                     message = ("success", "iGPSport 配置已清除")
                     saving = false
+                }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
                 }
             } catch {
                 await MainActor.run { message = ("error", "清除失败"); saving = false }
@@ -768,6 +877,10 @@ struct SettingsView: View {
                     intervalsApiKey = ""
                     saving = false
                 }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
+                }
             } catch {
                 await MainActor.run { message = ("error", error.localizedDescription); saving = false }
             }
@@ -783,6 +896,10 @@ struct SettingsView: View {
                     intervalsConfigured = false; intervalsUserId = ""
                     message = ("success", "Intervals.icu 配置已清除")
                     saving = false
+                }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
                 }
             } catch {
                 await MainActor.run { message = ("error", "清除失败"); saving = false }
@@ -829,9 +946,16 @@ struct SettingsView: View {
         Task {
             do {
                 try await APIService.shared.disconnectStrava()
+                // Also auto-disable sync_to_strava
+                syncToStrava = false
+                try? await APIService.shared.updateAccount(["sync_to_strava": false])
                 await MainActor.run {
                     stravaConnected = false
                     message = ("success", "Strava 已断开连接")
+                }
+                let statusRes = try? await APIService.shared.getAccountStatus()
+                if let s = statusRes {
+                    await MainActor.run { platformStatuses = s.platforms }
                 }
             } catch {
                 await MainActor.run { message = ("error", "断开失败，请重试") }
