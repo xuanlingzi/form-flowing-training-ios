@@ -12,6 +12,9 @@ struct ActivityDetailView: View {
     @State private var analyzing = false
     @State private var appear = false
     @State private var expandedCharts: Set<String> = ["heartRate", "power"]
+    @State private var showReanalyzeSheet = false
+    @State private var reanalyzePrompt = ""
+    @State private var showDeepConfirm = false
     
     var sportConfig: (icon: String, color: Color, label: String) {
         switch activity?.sport {
@@ -256,28 +259,105 @@ struct ActivityDetailView: View {
     
     // MARK: - Analyze Button
     
+    private var hasProAnalysis: Bool {
+        analysis?.tier == "pro"
+    }
+    
+    private var hasFastOnly: Bool {
+        analysis != nil && analysis?.tier == "fast"
+    }
+    
     var analyzeButton: some View {
-        Button(action: triggerAnalysis) {
+        let isReanalyze = hasProAnalysis
+        let isDeep = hasFastOnly
+        let label = analyzing ? "AI 分析中..." : isReanalyze ? "🔄 重新分析" : isDeep ? "🔬 深度分析" : "启动 AI 分析"
+        let colors: [Color] = analyzing ? [.gray]
+            : isReanalyze ? [.blue, .indigo]
+            : isDeep ? [.red, .orange]
+            : [Color(red: 0.05, green: 0.58, blue: 0.53), .green]
+        let shadowColor: Color = isReanalyze ? .blue : isDeep ? .red : .teal
+        
+        return Button(action: {
+            if isReanalyze {
+                reanalyzePrompt = ""
+                showReanalyzeSheet = true
+            } else if isDeep {
+                showDeepConfirm = true
+            } else {
+                doTriggerAnalysis()
+            }
+        }) {
             HStack(spacing: 10) {
                 if analyzing {
                     ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "sparkles")
+                    Image(systemName: isReanalyze ? "arrow.clockwise" : "sparkles")
                 }
-                Text(analyzing ? "AI 分析中..." : "启动 AI 分析")
+                Text(label)
                     .font(.system(size: 16, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                LinearGradient(colors: analyzing ? [.gray] : [Color(red: 0.05, green: 0.58, blue: 0.53), .green],
-                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
             )
             .foregroundColor(.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .teal.opacity(analyzing ? 0 : 0.3), radius: 8, y: 4)
+            .shadow(color: shadowColor.opacity(analyzing ? 0 : 0.3), radius: 8, y: 4)
         }
         .disabled(analyzing)
+        .alert("深度分析", isPresented: $showDeepConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("开始") { doTriggerAnalysis() }
+        } message: {
+            Text("深度分析使用更高级的 AI 模型，分析速度较慢，请耐心等候。\n\n确定要开始深度分析吗？")
+        }
+        .sheet(isPresented: $showReanalyzeSheet) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("使用 Pro 模型重新分析本次训练，可输入额外分析要求")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                    
+                    TextEditor(text: $reanalyzePrompt)
+                        .frame(minHeight: 120)
+                        .padding(8)
+                        .background(Color(UIColor.systemGray6))
+                        .cornerRadius(10)
+                        .overlay(
+                            Group {
+                                if reanalyzePrompt.isEmpty {
+                                    Text("例如：请重点分析间歇训练的功率衰减情况...")
+                                        .foregroundColor(.gray.opacity(0.5))
+                                        .font(.system(size: 14))
+                                        .padding(.leading, 12)
+                                        .padding(.top, 16)
+                                        .allowsHitTesting(false)
+                                }
+                            },
+                            alignment: .topLeading
+                        )
+                    
+                    Spacer()
+                }
+                .padding(20)
+                .navigationTitle("🔄 重新分析")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { showReanalyzeSheet = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("开始分析") {
+                            showReanalyzeSheet = false
+                            doTriggerAnalysis(extraPrompt: reanalyzePrompt)
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
     }
     
     // MARK: - GPS Map
@@ -492,11 +572,11 @@ struct ActivityDetailView: View {
         }
     }
     
-    private func triggerAnalysis() {
+    private func doTriggerAnalysis(extraPrompt: String? = nil) {
         analyzing = true
         Task {
             do {
-                try await APIService.shared.triggerAnalysis(activityId: activityId)
+                try await APIService.shared.triggerAnalysis(activityId: activityId, extraPrompt: extraPrompt)
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 let res = try? await APIService.shared.getAnalysisByActivity(activityId: activityId)
                 await MainActor.run { analysis = res?.records.first; analyzing = false }

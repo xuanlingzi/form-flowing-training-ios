@@ -6,11 +6,11 @@ final class APIService {
 
     // TODO: 替换为实际 API 地址（生产环境）
     // 开发调试时使用本机地址
-    #if targetEnvironment(simulator)
-    private let baseURL = "http://localhost:8000/api"
-    #else
+    // #if targetEnvironment(simulator)
+    // private let baseURL = "http://localhost:8000/api"
+    // #else
     private let baseURL = "https://api.formflowing.com/api"
-    #endif
+    // #endif
 
     private let tokenRefreshCoordinator = TokenRefreshCoordinator()
     private let decoder: JSONDecoder = {
@@ -256,8 +256,12 @@ final class APIService {
     
     // MARK: - 分析
     
-    func triggerAnalysis(activityId: Int, tier: String = "pro") async throws {
-        try await requestVoid("/analysis/trigger/\(activityId)?tier=\(tier)", method: "POST", timeout: 120)
+    func triggerAnalysis(activityId: Int, tier: String = "pro", extraPrompt: String? = nil) async throws {
+        var body: [String: Any] = [:]
+        if let extraPrompt, !extraPrompt.isEmpty {
+            body["extra_prompt"] = extraPrompt
+        }
+        try await requestVoid("/analysis/trigger/\(activityId)?tier=\(tier)", method: "POST", body: body.isEmpty ? nil : body, timeout: 120)
     }
     
     func getAnalysisHistory(page: Int = 1, size: Int = 20) async throws -> AnalysisHistoryResponse {
