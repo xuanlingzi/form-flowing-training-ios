@@ -191,9 +191,9 @@ struct ActivityDetailView: View {
             ForEach(Array(laps.enumerated()), id: \.offset) { idx, lap in
                 HStack(spacing: 12) {
                     Text("\(idx + 1)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 22, height: 22)
                         .background(sportConfig.color.opacity(0.8))
                         .clipShape(Circle())
                     
@@ -206,44 +206,45 @@ struct ActivityDetailView: View {
                         }
                     }
                     
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 4)
                     
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 8) {
                             if let spd = lap.avgSpeed {
                                 HStack(spacing: 2) {
-                                    Image(systemName: "speedometer").font(.system(size: 10)).foregroundColor(.cyan)
-                                    Text(String(format: "%.1f km/h", spd * 3.6)).font(.system(size: 12, weight: .medium))
+                                    Image(systemName: "speedometer").font(.system(size: 9)).foregroundColor(.cyan)
+                                    Text(String(format: "%.1f km/h", spd * 3.6)).font(.system(size: 11, weight: .medium))
                                 }
                             }
                             if let cad = lap.avgCadence {
                                 HStack(spacing: 2) {
-                                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 10)).foregroundColor(.blue)
-                                    Text("\(cad) rpm").font(.system(size: 12, weight: .medium))
+                                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 9)).foregroundColor(.blue)
+                                    Text("\(cad) rpm").font(.system(size: 11, weight: .medium))
                                 }
                             }
                             if let hr = lap.avgHeartRate {
                                 HStack(spacing: 2) {
-                                    Image(systemName: "heart.fill").font(.system(size: 10)).foregroundColor(.red)
-                                    Text("\(hr) bpm").font(.system(size: 12, weight: .medium))
+                                    Image(systemName: "heart.fill").font(.system(size: 9)).foregroundColor(.red)
+                                    Text("\(hr) bpm").font(.system(size: 11, weight: .medium))
                                 }
                             }
+                        }
+                        
+                        HStack(spacing: 12) {
                             if let ap = lap.avgPower {
                                 HStack(spacing: 2) {
-                                    Text("AP").font(.system(size: 10, weight: .bold)).foregroundColor(.yellow)
-                                    Text("\(ap) W").font(.system(size: 12, weight: .medium))
+                                    Text("AP").font(.system(size: 9, weight: .bold)).foregroundColor(.yellow)
+                                    Text("\(ap) W").font(.system(size: 11, weight: .medium))
                                 }
                             }
                             if let np = lap.normalizedPower {
                                 HStack(spacing: 2) {
-                                    Text("NP").font(.system(size: 10, weight: .bold)).foregroundColor(.purple)
-                                    Text("\(np) W").font(.system(size: 12, weight: .medium))
+                                    Text("NP").font(.system(size: 9, weight: .bold)).foregroundColor(.purple)
+                                    Text("\(np) W").font(.system(size: 11, weight: .medium))
                                 }
                             }
                         }
                     }
-                    // For RTL languages, ScrollView can be flipped, but here we just constrain it:
-                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.vertical, 8)
                 if idx < laps.count - 1 { Divider() }
