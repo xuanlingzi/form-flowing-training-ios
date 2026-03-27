@@ -208,43 +208,42 @@ struct ActivityDetailView: View {
                     
                     Spacer(minLength: 8)
                     
-                    VStack(alignment: .trailing, spacing: 6) {
-                        HStack(spacing: 10) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
                             if let spd = lap.avgSpeed {
                                 HStack(spacing: 2) {
                                     Image(systemName: "speedometer").font(.system(size: 10)).foregroundColor(.cyan)
-                                    Text(String(format: "%.1f", spd * 3.6)).font(.system(size: 12, weight: .medium))
+                                    Text(String(format: "%.1f km/h", spd * 3.6)).font(.system(size: 12, weight: .medium))
                                 }
                             }
                             if let cad = lap.avgCadence {
                                 HStack(spacing: 2) {
                                     Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 10)).foregroundColor(.blue)
-                                    Text("\(cad)").font(.system(size: 12, weight: .medium))
+                                    Text("\(cad) rpm").font(.system(size: 12, weight: .medium))
                                 }
                             }
                             if let hr = lap.avgHeartRate {
                                 HStack(spacing: 2) {
                                     Image(systemName: "heart.fill").font(.system(size: 10)).foregroundColor(.red)
-                                    Text("\(hr)").font(.system(size: 12, weight: .medium))
+                                    Text("\(hr) bpm").font(.system(size: 12, weight: .medium))
                                 }
                             }
-                        }
-                        
-                        HStack(spacing: 10) {
                             if let ap = lap.avgPower {
                                 HStack(spacing: 2) {
                                     Text("AP").font(.system(size: 10, weight: .bold)).foregroundColor(.yellow)
-                                    Text("\(ap)W").font(.system(size: 12, weight: .medium))
+                                    Text("\(ap) W").font(.system(size: 12, weight: .medium))
                                 }
                             }
                             if let np = lap.normalizedPower {
                                 HStack(spacing: 2) {
                                     Text("NP").font(.system(size: 10, weight: .bold)).foregroundColor(.purple)
-                                    Text("\(np)W").font(.system(size: 12, weight: .medium))
+                                    Text("\(np) W").font(.system(size: 12, weight: .medium))
                                 }
                             }
                         }
                     }
+                    // For RTL languages, ScrollView can be flipped, but here we just constrain it:
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.vertical, 8)
                 if idx < laps.count - 1 { Divider() }
