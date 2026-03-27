@@ -570,9 +570,12 @@ struct HomeView: View {
                             if !tags.isEmpty {
                                 FlowLayout(spacing: 6) {
                                     ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
-                                        HStack(spacing: 3) {
-                                            Text(tag.0).font(.system(size: 9))
-                                            Text(tag.1).font(.system(size: 10, weight: .medium))
+                                        HStack(alignment: .top, spacing: 3) {
+                                            Text(tag.0).font(.system(size: 9)).padding(.top, 2)
+                                            Text(tag.1)
+                                                .font(.system(size: 10, weight: .medium))
+                                                .multilineTextAlignment(.leading)
+                                                .lineLimit(3)
                                         }
                                         .padding(.horizontal, 8).padding(.vertical, 4)
                                         .background(tag.2.opacity(0.1))

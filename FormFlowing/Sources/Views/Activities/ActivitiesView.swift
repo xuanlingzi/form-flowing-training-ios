@@ -307,10 +307,14 @@ struct ActivityCard: View {
                     if !strengths.isEmpty || !improvements.isEmpty {
                         FlowLayout(spacing: 4) {
                             ForEach(Array(strengths.enumerated()), id: \.offset) { _, s in
-                                HStack(spacing: 3) {
+                                HStack(alignment: .top, spacing: 3) {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 8)).foregroundColor(.green)
-                                    Text(s).font(.system(size: 9, weight: .medium)).foregroundColor(Color(red: 0.02, green: 0.47, blue: 0.34))
+                                        .padding(.top, 2)
+                                    Text(s).font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(Color(red: 0.02, green: 0.47, blue: 0.34))
+                                        .multilineTextAlignment(.leading)
+                                        .lineLimit(3)
                                 }
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.green.opacity(0.1))
@@ -318,10 +322,14 @@ struct ActivityCard: View {
                             }
                             
                             ForEach(Array(improvements.enumerated()), id: \.offset) { _, s in
-                                HStack(spacing: 3) {
+                                HStack(alignment: .top, spacing: 3) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.system(size: 8)).foregroundColor(.orange)
-                                    Text(s).font(.system(size: 9, weight: .medium)).foregroundColor(Color(red: 0.71, green: 0.33, blue: 0.04))
+                                        .padding(.top, 2)
+                                    Text(s).font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(Color(red: 0.71, green: 0.33, blue: 0.04))
+                                        .multilineTextAlignment(.leading)
+                                        .lineLimit(3)
                                 }
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.orange.opacity(0.1))
@@ -368,7 +376,11 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let result = arrangeSubviews(proposal: proposal, subviews: subviews)
         for (index, pos) in result.positions.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + pos.x, y: bounds.minY + pos.y), proposal: .unspecified)
+            let subview = subviews[index]
+            subview.place(
+                at: CGPoint(x: bounds.minX + pos.x, y: bounds.minY + pos.y),
+                proposal: ProposedViewSize(width: proposal.width, height: nil)
+            )
         }
     }
     
@@ -381,7 +393,7 @@ struct FlowLayout: Layout {
         var maxX: CGFloat = 0
         
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
             if x + size.width > maxWidth && x > 0 {
                 x = 0; y += rowHeight + spacing; rowHeight = 0
             }
@@ -391,7 +403,7 @@ struct FlowLayout: Layout {
             maxX = max(maxX, x)
         }
         
-        return (positions, CGSize(width: maxX, height: y + rowHeight))
+        return (positions, CGSize(width: min(maxX, maxWidth), height: y + rowHeight))
     }
 }
 
