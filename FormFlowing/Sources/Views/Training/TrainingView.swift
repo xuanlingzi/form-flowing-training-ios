@@ -701,7 +701,7 @@ struct GeneratePlanSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("运动类型").font(.headline)
                         HStack(spacing: 10) {
-                            ForEach([("cycling", "🚴", "骑行"), ("running", "🏃", "跑步"), ("swimming", "🏊", "游泳")], id: \.0) { key, icon, label in
+                            ForEach([("cycling", "🚴", "骑行"), ("running", "🏃", "跑步"), ("swimming", "🏊", "游泳"), ("strength", "🏋️", "力量")], id: \.0) { key, icon, label in
                                 Button(action: {
                                     if genSports.contains(key) {
                                         if genSports.count > 1 { genSports.remove(key) }
