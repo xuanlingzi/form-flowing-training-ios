@@ -681,7 +681,7 @@ struct SettingsView: View {
                 try await APIService.shared.updateProfile(data)
                 // 保存训练目标到记忆库
                 if !trainingGoalContent.isEmpty {
-                    try? await APIService.shared.saveTrainingGoal(content: trainingGoalContent)
+                    try? await APIService.shared.updateMemory(type: "training_goal", content: trainingGoalContent)
                 }
                 await MainActor.run { message = ("success", "个人档案已保存"); saving = false }
             } catch {
