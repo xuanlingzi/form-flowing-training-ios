@@ -50,6 +50,7 @@ struct TrainingView: View {
     @State private var genTssLevel = "moderate"
     @State private var genWeeks = 4.0
     @State private var generating = false
+    @State private var pollingTask: Task<Void, Never>?
     @State private var scrollOffset: CGFloat = 0
     
     private var collapseProgress: CGFloat {
@@ -76,6 +77,12 @@ struct TrainingView: View {
                 VStack(spacing: 16) {
                     if loading {
                         ProgressView().padding(.top, 40)
+                    } else if generating {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("AI 正在为您生成训练计划...").font(.subheadline).foregroundColor(.secondary)
+                        }
+                        .padding(.top, 60)
                     } else {
                         // 1. 计划描述（置顶）
                         if let plan = selectedPlan {
@@ -355,27 +362,42 @@ struct TrainingView: View {
     private func loadData() async {
         loading = true
         do {
-            let res = try await APIService.shared.getTrainingPlans()
-            let plans = res.plans
+            async let statusReq = try? APIService.shared.getPlanStatus()
+            async let plansReq = try APIService.shared.getTrainingPlans()
+            let (statusOpt, plansRes) = await (statusReq, try plansReq)
+            
+            let fetchedPlans = plansRes.plans
+            var currentPlanId: Int?
+            
             await MainActor.run {
-                self.plans = plans
-                if let active = plans.first(where: { $0.status == "active" }) ?? plans.first {
+                self.plans = fetchedPlans
+                if let active = fetchedPlans.first(where: { $0.status == "active" }) ?? fetchedPlans.first {
                     self.selectedPlan = active
+                    currentPlanId = active.trainingPlanId
+                } else {
+                    self.selectedPlan = nil
                 }
             }
-            if let plan = self.selectedPlan {
-                let detail = try await APIService.shared.getPlanDetail(planId: plan.trainingPlanId)
+            if let planId = currentPlanId {
+                let detail = try await APIService.shared.getPlanDetail(planId: planId)
                 await MainActor.run {
                     self.workouts = detail.workouts
-                    // Navigate to plan start month
-                    if let startDate = plan.startDate,
+                    if let startDate = self.selectedPlan?.startDate,
                        let date = dateFromString(startDate) {
                         self.currentMonth = date
                     }
                     self.loading = false
                 }
             } else {
-                await MainActor.run { loading = false }
+                await MainActor.run {
+                    self.workouts = []
+                    self.loading = false
+                }
+            }
+            
+            if statusOpt?.isGenerating == true {
+                await MainActor.run { generating = true }
+                startPolling(oldPlanId: currentPlanId)
             }
         } catch {
             await MainActor.run { loading = false }
@@ -421,18 +443,65 @@ struct TrainingView: View {
             "start_date": f.string(from: tomorrow),
         ]
         
+        let req: [String: Any] = [
+            "duration_weeks": Int(genWeeks),
+            "start_date": f.string(from: tomorrow)
+        ]
+        
+        let oldPlanId = selectedPlan?.trainingPlanId
+        
         Task {
-            do {
-                try await APIService.shared.generateTrainingPlan(goal: goal)
+            if let oldId = oldPlanId {
+                try? await APIService.shared.deletePlan(planId: oldId)
                 await MainActor.run {
-                    generating = false
-                    showGenSheet = false
+                    self.selectedPlan = nil
+                    self.workouts = []
+                    self.plans.removeAll { $0.trainingPlanId == oldId }
                 }
-                // 等待一下再加载
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await loadData()
+            }
+            
+            do {
+                try await APIService.shared.saveTrainingGoal(goal: goal)
+                try await APIService.shared.generateTrainingPlan(req: req)
+                await MainActor.run { showGenSheet = false }
+                startPolling(oldPlanId: oldPlanId)
             } catch {
                 await MainActor.run { generating = false }
+            }
+        }
+    }
+    
+    private func startPolling(oldPlanId: Int?) {
+        pollingTask?.cancel()
+        pollingTask = Task {
+            var checks = 0
+            while checks < 60 && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { break }
+                
+                do {
+                    let res = try await APIService.shared.getTrainingPlans()
+                    let newPlans = res.plans
+                    if let latest = newPlans.first, latest.trainingPlanId != oldPlanId {
+                        await MainActor.run { 
+                            self.plans = newPlans
+                            self.selectedPlan = latest
+                        }
+                        let detail = try await APIService.shared.getPlanDetail(planId: latest.trainingPlanId)
+                        await MainActor.run {
+                            self.workouts = detail.workouts
+                            if let startDate = latest.startDate, let d = self.dateFromString(startDate) {
+                                self.currentMonth = d
+                            }
+                            self.generating = false
+                        }
+                        break
+                    }
+                } catch { }
+                checks += 1
+            }
+            if !Task.isCancelled {
+                await MainActor.run { self.generating = false }
             }
         }
     }

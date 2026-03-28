@@ -286,6 +286,10 @@ final class APIService {
         return try await request("/training/plan")
     }
     
+    func getPlanStatus() async throws -> TrainingPlanStatusResponse {
+        return try await request("/training/plan/status")
+    }
+    
     func getPlanDetail(planId: Int) async throws -> TrainingPlanDetailResponse {
         return try await request("/training/plan/\(planId)")
     }
@@ -355,12 +359,12 @@ final class APIService {
         return try await request("/training-goal")
     }
     
-    func saveTrainingGoal(content: String) async throws {
-        try await requestVoid("/training-goal", method: "POST", body: ["content": content])
+    func saveTrainingGoal(goal: [String: Any]) async throws {
+        try await requestVoid("/training-goal", method: "POST", body: goal)
     }
     
-    func generateTrainingPlan(goal: [String: Any]) async throws {
-        try await requestVoid("/training/goal", method: "POST", body: goal, timeout: 120)
+    func generateTrainingPlan(req: [String: Any]) async throws {
+        try await requestVoid("/training/plan/generate", method: "POST", body: req, timeout: 120)
     }
     
     // MARK: - 文件上传

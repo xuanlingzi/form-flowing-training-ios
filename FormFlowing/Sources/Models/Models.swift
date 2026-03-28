@@ -297,6 +297,10 @@ struct AnalysisStatusResponse: Codable {
 
 // MARK: - Training Plan
 
+struct TrainingPlanStatusResponse: Codable {
+    let isGenerating: Bool
+}
+
 struct TrainingPlan: Codable, Identifiable {
     var id: Int { trainingPlanId }
     let trainingPlanId: Int
