@@ -13,7 +13,7 @@ final class AuthManager: ObservableObject {
     private let accessTokenKey = "access_token"
     private let usernameKey = "username"
     private let keychainService = "com.formflowing.ios.auth"
-    private let keychainAccount = "saved_login_password"
+    private let keychainAccount = "saved_refresh_token"
 
     private init() {
         let savedToken = UserDefaults.standard.string(forKey: accessTokenKey) ?? ""
@@ -25,16 +25,16 @@ final class AuthManager: ObservableObject {
         }
     }
 
-    func login(token: String, username: String, password: String? = nil) {
-        self.token = token
+    func login(accessToken: String, refreshToken: String?, username: String) {
+        self.token = accessToken
         self.username = username
         isAuthenticated = true
 
-        UserDefaults.standard.set(token, forKey: accessTokenKey)
+        UserDefaults.standard.set(accessToken, forKey: accessTokenKey)
         UserDefaults.standard.set(username, forKey: usernameKey)
 
-        if let password, !password.isEmpty {
-            savePassword(password)
+        if let refreshToken, !refreshToken.isEmpty {
+            saveRefreshToken(refreshToken)
         }
     }
 
@@ -44,11 +44,11 @@ final class AuthManager: ObservableObject {
         UserDefaults.standard.set(token, forKey: accessTokenKey)
     }
 
-    func storedCredentials() -> (username: String, password: String)? {
-        guard !username.isEmpty, let password = loadPassword(), !password.isEmpty else {
+    func storedRefreshToken() -> String? {
+        guard let refreshToken = loadRefreshToken(), !refreshToken.isEmpty else {
             return nil
         }
-        return (username, password)
+        return refreshToken
     }
 
     func shouldRefreshToken(within seconds: TimeInterval = 300) -> Bool {
@@ -67,7 +67,7 @@ final class AuthManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: usernameKey)
 
         if clearStoredCredentials {
-            deletePassword()
+            deleteRefreshToken()
         }
     }
 
@@ -94,8 +94,8 @@ final class AuthManager: ObservableObject {
         return Date(timeIntervalSince1970: exp)
     }
 
-    private func savePassword(_ password: String) {
-        let encodedPassword = Data(password.utf8)
+    private func saveRefreshToken(_ refreshToken: String) {
+        let encodedToken = Data(refreshToken.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -105,11 +105,11 @@ final class AuthManager: ObservableObject {
         SecItemDelete(query as CFDictionary)
 
         var item = query
-        item[kSecValueData as String] = encodedPassword
+        item[kSecValueData as String] = encodedToken
         SecItemAdd(item as CFDictionary, nil)
     }
 
-    private func loadPassword() -> String? {
+    private func loadRefreshToken() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -122,14 +122,14 @@ final class AuthManager: ObservableObject {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess,
               let data = item as? Data,
-              let password = String(data: data, encoding: .utf8) else {
+              let refreshToken = String(data: data, encoding: .utf8) else {
             return nil
         }
 
-        return password
+        return refreshToken
     }
 
-    private func deletePassword() {
+    private func deleteRefreshToken() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,

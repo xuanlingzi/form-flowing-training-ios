@@ -260,12 +260,11 @@ struct ActivityDetailView: View {
     @ViewBuilder
     func aiSection(_ analysis: AnalysisResult) -> some View {
         let isPro = analysis.tier == "pro"
-        let modelStr: String
-        if let m = analysis.modelUsed, !m.isEmpty {
-            modelStr = " · " + (m.components(separatedBy: "/").last ?? m)
-        } else {
-            modelStr = ""
-        }
+        let modelStr = analysis.modelUsed
+            .flatMap { modelUsed in
+                guard !modelUsed.isEmpty else { return nil }
+                return " · " + (modelUsed.components(separatedBy: "/").last ?? modelUsed)
+            } ?? ""
         let badgeText = (isPro ? "🔬 深度" : "⚡️ 快速") + modelStr
         
         VStack(alignment: .leading, spacing: 14) {

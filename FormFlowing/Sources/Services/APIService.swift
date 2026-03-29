@@ -149,22 +149,20 @@ final class APIService {
 
     private func forceRefreshAccessToken() async throws -> String {
         try await tokenRefreshCoordinator.refreshToken {
-            guard let credentials = await MainActor.run(body: {
-                AuthManager.shared.storedCredentials()
+            // 从 Keychain 读取长期 refresh_token
+            guard let refreshToken = await MainActor.run(body: {
+                AuthManager.shared.storedRefreshToken()
             }) else {
                 throw APIError.unauthorized
             }
 
-            let response = try await self.login(
-                username: credentials.username,
-                password: credentials.password,
-                requiresAuth: false
-            )
+            // 发送刷新请求换去全新双 token
+            let response = try await self.refreshToken(refreshToken)
 
             await AuthManager.shared.login(
-                token: response.accessToken,
-                username: credentials.username,
-                password: credentials.password
+                accessToken: response.accessToken,
+                refreshToken: response.refreshToken,
+                username: response.username ?? ""
             )
 
             return response.accessToken
@@ -172,6 +170,15 @@ final class APIService {
     }
 
     // MARK: - 认证
+
+    func refreshToken(_ token: String) async throws -> LoginResponse {
+        return try await request(
+            "/auth/refresh_token",
+            method: "POST",
+            body: ["refresh_token": token],
+            requiresAuth: false
+        )
+    }
 
     func login(username: String, password: String, requiresAuth: Bool = false) async throws -> LoginResponse {
         return try await request(

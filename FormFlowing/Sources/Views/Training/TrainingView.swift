@@ -41,6 +41,8 @@ struct TrainingView: View {
     @State private var currentMonth = Date()
     @State private var selectedDate: String?
     @State private var showDeleteAlert = false
+    @State private var showPlanDetailsSheet = false
+    @State private var showCalendarSheet = false
     @State private var swipeDirection: TransitionDirection = .forward
     
     enum TransitionDirection {
@@ -85,6 +87,13 @@ struct TrainingView: View {
         return formatter.string(from: date)
     }
     
+    var shortDateTitle: String {
+        guard let dateStr = selectedDate, let date = dateFromString(dateStr) else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        return formatter.string(from: date)
+    }
+    
     var selectedDateWorkouts: [Workout] {
         guard let date = selectedDate else { return [] }
         return workouts.filter { $0.workoutDate == date }
@@ -92,16 +101,53 @@ struct TrainingView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 16) {
-                    if loading {
-                        ProgressView().padding(.top, 40)
-                    } else if generating {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("AI 正在为您生成训练计划...").font(.subheadline).foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                // 顶部仪表盘栏 (替代系统 NavigationBar 防止截断)
+                HStack(alignment: .center) {
+                    if let plan = selectedPlan {
+                        Text(plan.planName)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    } else {
+                        Text("近期无计划")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer(minLength: 16)
+                    
+                    if selectedPlan != nil {
+                        Button(action: { showPlanDetailsSheet = true }) {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(.primary)
+                                .frame(width: 32, height: 32)
                         }
-                        .padding(.top, 60)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
+                .background(Color(UIColor.systemGroupedBackground))
+                
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 16) {
+                        if loading {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                Text("加载训练数据...")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                        } else if generating {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                Text("AI 正在为您生成训练计划...").font(.subheadline).foregroundColor(.secondary)
+                            }
+                            .padding(.top, 60)
                     } else if adjustingSchedule {
                         VStack(spacing: 12) {
                             ProgressView()
@@ -109,39 +155,45 @@ struct TrainingView: View {
                         }
                         .padding(.top, 60)
                     } else {
-                        // 1. 日历 (置顶)
-                        calendarView.padding(.horizontal)
-                        
-                        // 2. 计划标题和描述
-                        if let plan = selectedPlan {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(plan.planName)
-                                    .font(.title2.weight(.bold))
+                        // 日期切换器
+                        HStack {
+                            Button(action: prevDay) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 18, weight: .semibold))
                                     .foregroundColor(.primary)
-                                
-                                if let desc = plan.description {
-                                    Text(desc)
-                                        .font(.system(size: 13))
-                                        .foregroundColor(.secondary)
-                                }
-                                if let weeks = plan.durationWeeks {
-                                    Text("\(weeks) 周")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
+                                    .padding(.vertical, 8)
+                                    .padding(.trailing, 16)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16).background(.white).cornerRadius(16)
-                            .padding(.horizontal)
+                            
+                            Spacer()
+                            
+                            Button(action: { showCalendarSheet = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 15))
+                                    Text(selectedDateTitle)
+                                }
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(action: nextDay) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .padding(.vertical, 8)
+                                    .padding(.leading, 16)
+                            }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 4)
                         
-                        // 3. 当日训练
+                        // 1. 直切主题：当日训练卡片流
                         ZStack {
                             if !selectedDateWorkouts.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Label(selectedDate == todayStr() ? "今日训练" : "训练安排", systemImage: "flame.fill")
-                                        .font(.headline)
-                                    
+                                VStack(alignment: .leading, spacing: 14) {
                                     ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
                                         WorkoutCardView(
                                             workout: workout, 
@@ -151,33 +203,23 @@ struct TrainingView: View {
                                         )
                                     }
                                 }
-                                .padding(16).background(.white).cornerRadius(16)
                                 .padding(.horizontal)
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: swipeDirection == .forward ? .trailing : .leading).combined(with: .opacity),
-                                    removal: .move(edge: swipeDirection == .forward ? .leading : .trailing).combined(with: .opacity)
-                                ))
+                                .transition(.push(from: swipeDirection == .forward ? .trailing : .leading))
                                 .id(selectedDate ?? "")
                             } else {
                                 VStack(spacing: 12) {
                                     Image(systemName: "cup.and.saucer")
                                         .font(.title)
-                                        .foregroundColor(Color(UIColor.tertiaryLabel))
                                     Text("今日暂无训练安排")
                                         .font(.subheadline)
-                                        .foregroundColor(.secondary)
                                 }
+                                .foregroundColor(Color(UIColor.tertiaryLabel))
                                 .frame(maxWidth: .infinity, minHeight: 140)
-                                .background(.white).cornerRadius(16)
-                                .padding(.horizontal)
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: swipeDirection == .forward ? .trailing : .leading).combined(with: .opacity),
-                                    removal: .move(edge: swipeDirection == .forward ? .leading : .trailing).combined(with: .opacity)
-                                ))
+                                .transition(.push(from: swipeDirection == .forward ? .trailing : .leading))
                                 .id(selectedDate ?? "")
                             }
                         }
-                        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: selectedDate)
+                        .animation(.easeInOut(duration: 0.3), value: selectedDate)
                         
                         // 4. 底部操作面板（随内容滚动）
                         bottomActions
@@ -193,14 +235,12 @@ struct TrainingView: View {
                     }
                 )
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .coordinateSpace(name: "trainingScroll")
             .onPreferenceChange(ScrollOffsetKey.self) { value in
                 scrollOffset = value
             }
-            .safeAreaInset(edge: .top) {
-                trainingHeader
-            }
-            .background(Color(UIColor.systemGroupedBackground))
+            .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await loadData() }
             .simultaneousGesture(
@@ -229,6 +269,123 @@ struct TrainingView: View {
                     generating: $generating,
                     onGenerate: generatePlan
                 )
+            }
+            .sheet(isPresented: $showCalendarSheet) {
+                NavigationView {
+                    ScrollView {
+                        calendarView
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(20)
+                            .padding()
+                    }
+                    .background(Color(UIColor.systemGroupedBackground))
+                    .navigationTitle("训练日历")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showCalendarSheet = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showPlanDetailsSheet) {
+                if let plan = selectedPlan {
+                    NavigationView {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Text(plan.planName)
+                                    .font(.title2.weight(.bold))
+                                
+                                if let weeks = plan.durationWeeks {
+                                    HStack {
+                                        Image(systemName: "calendar.badge.clock")
+                                        Text("\(weeks) 周周期")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                }
+                                
+                                Divider()
+                                
+                                if let desc = plan.description {
+                                    Text(desc)
+                                        .font(.system(size: 15))
+                                        .foregroundColor(.primary)
+                                        .lineSpacing(4)
+                                }
+                                
+                                Spacer(minLength: 32)
+                                
+                                VStack(spacing: 12) {
+                                    Button(action: {
+                                        showPlanDetailsSheet = false
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            pushToGarmin()
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "arrow.up.circle")
+                                            Text("将近期训练推至佳明日历")
+                                        }
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(Color.teal)
+                                        .cornerRadius(12)
+                                    }
+                                    
+                                    Button(action: {
+                                        showPlanDetailsSheet = false
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            showGenSheet = true
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "sparkles")
+                                            Text("重新生成计划")
+                                        }
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                        .cornerRadius(12)
+                                    }
+                                    
+                                    Button(action: {
+                                        showPlanDetailsSheet = false
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            showDeleteAlert = true
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "trash")
+                                            Text("删除计划")
+                                        }
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.red)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(Color.red.opacity(0.1))
+                                        .cornerRadius(12)
+                                    }
+                                }
+                            }
+                            .padding(20)
+                        }
+                        .navigationTitle("计划详情")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("关闭") { showPlanDetailsSheet = false }
+                            }
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                }
             }
             .alert("删除训练计划", isPresented: $showDeleteAlert) {
                 Button("删除", role: .destructive) { deletePlan() }
@@ -260,114 +417,38 @@ struct TrainingView: View {
             } message: {
                 Text("这会将该排期及计划内所有后续课程统一向后顺延 1 天，并在佳明日历上同步修改。确定执行吗？")
             }
-        }
-    }
-    
-    // MARK: - 可折叠头部
-    
-    private var trainingHeader: some View {
-        let titleSize: CGFloat = 20 - 4 * collapseProgress
-        
-        return ZStack(alignment: .center) {
-            // 居中具体日期标题
-            Text(selectedDateTitle)
-                .font(.system(size: min(titleSize, 18), weight: .bold))
-                .animation(.none, value: selectedDateTitle)
-            
-            // 左右侧边按钮
-            HStack {
-                Button(action: prevDay) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: titleSize * 0.7, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 8)
-                        .padding(.trailing, 16)
-                }
-                Spacer()
-                Button(action: nextDay) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: titleSize * 0.7, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 8)
-                        .padding(.leading, 16)
-                }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12 - 4 * collapseProgress)
-        .padding(.bottom, 12 - 4 * collapseProgress)
-        .background(
-            Color(UIColor.systemBackground)
-                .shadow(.drop(color: .black.opacity(0.06 * collapseProgress), radius: 4, y: 2))
-        )
-        .animation(.interactiveSpring(response: 0.3), value: collapseProgress)
     }
+    
+    // Note: old trainingHeader removed
     
     // MARK: - 底部悬浮按钮
     
     private var bottomActions: some View {
-        HStack(spacing: 12) {
-            if selectedPlan != nil {
-                Button(action: pushToGarmin) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.up.circle")
-                        Text("推至设备")
+        Group {
+            if selectedPlan == nil {
+                HStack(spacing: 12) {
+                    Button(action: { showGenSheet = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                            Text("AI 生成计划")
+                        }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(12)
                     }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.teal)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.teal.opacity(0.1))
-                    .cornerRadius(10)
                 }
-                
-                Button(action: { showDeleteAlert = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash")
-                        Text("删除")
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(10)
-                }
-                
-                Button(action: { showGenSheet = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("重新生成")
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(10)
-                }
-            } else {
-                Button(action: { showGenSheet = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("AI 生成计划")
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(12)
-                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 30)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 10)
-        .padding(.bottom, 30)
     }
     
     // MARK: - Calendar
@@ -399,6 +480,7 @@ struct TrainingView: View {
                                 }
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
                                     selectedDate = d 
+                                    showCalendarSheet = false
                                 }
                             }) {
                                 VStack(spacing: 2) {
@@ -794,8 +876,8 @@ struct WorkoutCardView: View {
                 .padding(14)
             }
         }
-        .background(Color(UIColor.systemGray6))
-        .cornerRadius(14)
+        .background(Color.white)
+        .cornerRadius(16)
         .onAppear { expanded = initiallyExpanded }
     }
 }
@@ -836,6 +918,7 @@ struct StepCardView: View {
                     StepCardView(step: sub)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(6)
             .background(Color(UIColor.systemGray6))
             .cornerRadius(10)
@@ -881,7 +964,10 @@ struct StepCardView: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
+                
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white)
             .cornerRadius(8)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
