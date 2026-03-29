@@ -302,6 +302,14 @@ final class APIService {
         try await requestVoid("/training/plan/\(planId)/push-garmin", method: "POST")
     }
     
+    func cancelWorkoutSchedule(workoutId: Int) async throws {
+        try await requestVoid("/training/workout/\(workoutId)/schedule", method: "DELETE")
+    }
+    
+    func postponeWorkout(workoutId: Int) async throws {
+        try await requestVoid("/training/workout/\(workoutId)/postpone", method: "POST")
+    }
+    
     // MARK: - 记忆
     
     func getMemories() async throws -> MemoryListResponse {

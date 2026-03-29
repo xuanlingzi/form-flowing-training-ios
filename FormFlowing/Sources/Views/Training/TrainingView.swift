@@ -41,6 +41,16 @@ struct TrainingView: View {
     @State private var currentMonth = Date()
     @State private var selectedDate: String?
     @State private var showDeleteAlert = false
+    @State private var swipeDirection: TransitionDirection = .forward
+    
+    enum TransitionDirection {
+        case forward, backward
+    }
+    
+    // 调整排期
+    @State private var adjustingSchedule = false
+    @State private var workoutToCancel: Workout?
+    @State private var workoutToPostpone: Workout?
     
     // AI 生成
     @State private var showGenSheet = false
@@ -66,6 +76,15 @@ struct TrainingView: View {
         return formatter.string(from: currentMonth)
     }
     
+    var selectedDateTitle: String {
+        guard let dateStr = selectedDate, let date = dateFromString(dateStr) else {
+            return monthTitle
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter.string(from: date)
+    }
+    
     var selectedDateWorkouts: [Workout] {
         guard let date = selectedDate else { return [] }
         return workouts.filter { $0.workoutDate == date }
@@ -83,10 +102,23 @@ struct TrainingView: View {
                             Text("AI 正在为您生成训练计划...").font(.subheadline).foregroundColor(.secondary)
                         }
                         .padding(.top, 60)
+                    } else if adjustingSchedule {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("正在调整排期并同步至佳明...").font(.subheadline).foregroundColor(.secondary)
+                        }
+                        .padding(.top, 60)
                     } else {
-                        // 1. 计划描述（置顶）
+                        // 1. 日历 (置顶)
+                        calendarView.padding(.horizontal)
+                        
+                        // 2. 计划标题和描述
                         if let plan = selectedPlan {
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(plan.planName)
+                                    .font(.title2.weight(.bold))
+                                    .foregroundColor(.primary)
+                                
                                 if let desc = plan.description {
                                     Text(desc)
                                         .font(.system(size: 13))
@@ -99,40 +131,56 @@ struct TrainingView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(14).background(.white).cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-                        
-                        // 2. 当日训练
-                        if !selectedDateWorkouts.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Label(selectedDate == todayStr() ? "今日训练" : "训练安排", systemImage: "flame.fill")
-                                    .font(.headline)
-                                
-                                ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
-                                    WorkoutCardView(workout: workout, initiallyExpanded: idx == 0)
-                                }
-                            }
                             .padding(16).background(.white).cornerRadius(16)
                             .padding(.horizontal)
                         }
                         
-                        // 3. 月份导航
-                        HStack {
-                            Button(action: prevMonth) {
-                                Image(systemName: "chevron.left").font(.headline)
-                            }
-                            Spacer()
-                            Text(monthTitle).font(.headline)
-                            Spacer()
-                            Button(action: nextMonth) {
-                                Image(systemName: "chevron.right").font(.headline)
+                        // 3. 当日训练
+                        ZStack {
+                            if !selectedDateWorkouts.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Label(selectedDate == todayStr() ? "今日训练" : "训练安排", systemImage: "flame.fill")
+                                        .font(.headline)
+                                    
+                                    ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
+                                        WorkoutCardView(
+                                            workout: workout, 
+                                            initiallyExpanded: idx == 0,
+                                            onCancelSchedule: { workoutToCancel = workout },
+                                            onPostpone: { workoutToPostpone = workout }
+                                        )
+                                    }
+                                }
+                                .padding(16).background(.white).cornerRadius(16)
+                                .padding(.horizontal)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: swipeDirection == .forward ? .trailing : .leading).combined(with: .opacity),
+                                    removal: .move(edge: swipeDirection == .forward ? .leading : .trailing).combined(with: .opacity)
+                                ))
+                                .id(selectedDate ?? "")
+                            } else {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "cup.and.saucer")
+                                        .font(.title)
+                                        .foregroundColor(Color(UIColor.tertiaryLabel))
+                                    Text("今日暂无训练安排")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 140)
+                                .background(.white).cornerRadius(16)
+                                .padding(.horizontal)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: swipeDirection == .forward ? .trailing : .leading).combined(with: .opacity),
+                                    removal: .move(edge: swipeDirection == .forward ? .leading : .trailing).combined(with: .opacity)
+                                ))
+                                .id(selectedDate ?? "")
                             }
                         }
-                        .padding(.horizontal)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: selectedDate)
                         
-                        // 4. 日历
-                        calendarView.padding(.horizontal)
+                        // 4. 底部操作面板（随内容滚动）
+                        bottomActions
                     }
                 }
                 .padding(.vertical)
@@ -155,6 +203,18 @@ struct TrainingView: View {
             .background(Color(UIColor.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await loadData() }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                         if abs(value.translation.width) > abs(value.translation.height) {
+                             if value.translation.width < -40 {
+                                 nextDay() // Swipe Left 
+                             } else if value.translation.width > 40 {
+                                 prevDay() // Swipe Right
+                             }
+                         }
+                    }
+            )
             .task {
                 await loadData()
                 selectedDate = todayStr()
@@ -176,71 +236,60 @@ struct TrainingView: View {
             } message: {
                 Text("确定要删除当前训练计划吗？此操作不可恢复。")
             }
+            .alert("删除排期", isPresented: Binding(
+                get: { workoutToCancel != nil },
+                set: { if !$0 { workoutToCancel = nil } }
+            )) {
+                Button("删除本次", role: .destructive) { 
+                    if let w = workoutToCancel { cancelSchedule(workout: w) }
+                    workoutToCancel = nil
+                }
+                Button("取消", role: .cancel) { workoutToCancel = nil }
+            } message: {
+                Text("确定要删除本次排期吗？这不会影响原有训练课程定义，但会从佳明日历中撤下。")
+            }
+            .alert("顺延一日", isPresented: Binding(
+                get: { workoutToPostpone != nil },
+                set: { if !$0 { workoutToPostpone = nil } }
+            )) {
+                Button("确定") {
+                    if let w = workoutToPostpone { postponeWorkout(workout: w) }
+                    workoutToPostpone = nil
+                }
+                Button("取消", role: .cancel) { workoutToPostpone = nil }
+            } message: {
+                Text("这会将该排期及计划内所有后续课程统一向后顺延 1 天，并在佳明日历上同步修改。确定执行吗？")
+            }
         }
     }
     
     // MARK: - 可折叠头部
     
     private var trainingHeader: some View {
-        let titleSize: CGFloat = 26 - 10 * collapseProgress
+        let titleSize: CGFloat = 20 - 4 * collapseProgress
         
-        return HStack(alignment: .center, spacing: 10) {
-            // 左侧标题
-            if let plan = selectedPlan {
-                Text(plan.planName)
-                    .font(.system(size: min(titleSize, 20), weight: .bold))
-            } else {
-                Text("训练")
-                    .font(.system(size: titleSize, weight: .bold))
-            }
+        return ZStack(alignment: .center) {
+            // 居中具体日期标题
+            Text(selectedDateTitle)
+                .font(.system(size: min(titleSize, 18), weight: .bold))
+                .animation(.none, value: selectedDateTitle)
             
-            Spacer()
-            
-            // 右侧按钮
-            if selectedPlan != nil {
-                HStack(spacing: 6) {
-                    Button(action: pushToGarmin) {
-                        Image(systemName: "arrow.up.circle")
-                            .font(.system(size: 16))
-                            .foregroundColor(.teal)
-                            .frame(width: 30, height: 30)
-                            .background(Color.teal.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                    
-                    Button(action: { showDeleteAlert = true }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 14))
-                            .foregroundColor(.red)
-                            .frame(width: 30, height: 30)
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                    
-                    Button(action: { showGenSheet = true }) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .cornerRadius(8)
-                    }
+            // 左右侧边按钮
+            HStack {
+                Button(action: prevDay) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: titleSize * 0.7, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 8)
+                        .padding(.trailing, 16)
                 }
-            } else {
-                Button(action: { showGenSheet = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("AI 生成")
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(
-                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(8)
+                Spacer()
+                Button(action: nextDay) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: titleSize * 0.7, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 8)
+                        .padding(.leading, 16)
                 }
             }
         }
@@ -252,6 +301,73 @@ struct TrainingView: View {
                 .shadow(.drop(color: .black.opacity(0.06 * collapseProgress), radius: 4, y: 2))
         )
         .animation(.interactiveSpring(response: 0.3), value: collapseProgress)
+    }
+    
+    // MARK: - 底部悬浮按钮
+    
+    private var bottomActions: some View {
+        HStack(spacing: 12) {
+            if selectedPlan != nil {
+                Button(action: pushToGarmin) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.circle")
+                        Text("推至设备")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.teal)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.teal.opacity(0.1))
+                    .cornerRadius(10)
+                }
+                
+                Button(action: { showDeleteAlert = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                        Text("删除")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(10)
+                }
+                
+                Button(action: { showGenSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("重新生成")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                    )
+                    .cornerRadius(10)
+                }
+            } else {
+                Button(action: { showGenSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("AI 生成计划")
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                    )
+                    .cornerRadius(12)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 30)
     }
     
     // MARK: - Calendar
@@ -277,7 +393,14 @@ struct TrainingView: View {
                             let isSelected = d == selectedDate
                             let dayWorkouts = workouts.filter { $0.workoutDate == d }
                             
-                            Button(action: { selectedDate = d }) {
+                            Button(action: { 
+                                if let curr = selectedDate, let currDate = dateFromString(curr), let newDate = dateFromString(d) {
+                                    swipeDirection = newDate > currDate ? .forward : .backward
+                                }
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                                    selectedDate = d 
+                                }
+                            }) {
                                 VStack(spacing: 2) {
                                     Text(dayNumber(d))
                                         .font(.system(size: 12, weight: isToday ? .bold : .regular))
@@ -341,7 +464,10 @@ struct TrainingView: View {
     }
     
     private func dayNumber(_ dateStr: String) -> String {
-        return String(dateStr.suffix(2).trimmingCharacters(in: CharacterSet(charactersIn: "0")))
+        if let day = Int(dateStr.suffix(2)) {
+            return String(day)
+        }
+        return String(dateStr.suffix(2))
     }
     
     private func todayStr() -> String {
@@ -355,6 +481,34 @@ struct TrainingView: View {
     
     private func nextMonth() {
         currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) ?? currentMonth
+    }
+    
+    private func prevDay() {
+        guard let current = selectedDate, let date = dateFromString(current) else { return }
+        if let prev = calendar.date(byAdding: .day, value: -1, to: date) {
+            swipeDirection = .backward
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                selectedDate = f.string(from: prev)
+                if !calendar.isDate(prev, equalTo: currentMonth, toGranularity: .month) {
+                    currentMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: prev)) ?? currentMonth
+                }
+            }
+        }
+    }
+    
+    private func nextDay() {
+        guard let current = selectedDate, let date = dateFromString(current) else { return }
+        if let next = calendar.date(byAdding: .day, value: 1, to: date) {
+            swipeDirection = .forward
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                selectedDate = f.string(from: next)
+                if !calendar.isDate(next, equalTo: currentMonth, toGranularity: .month) {
+                    currentMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: next)) ?? currentMonth
+                }
+            }
+        }
     }
     
     // MARK: - Data
@@ -505,6 +659,35 @@ struct TrainingView: View {
             }
         }
     }
+    
+    // MARK: - Handlers
+    
+    private func cancelSchedule(workout: Workout) {
+        let id = workout.trainingPlanWorkoutId
+        adjustingSchedule = true
+        Task {
+            do {
+                try await APIService.shared.cancelWorkoutSchedule(workoutId: id)
+                await loadData() // refresh
+            } catch {
+                // Handle error implicitly
+            }
+            await MainActor.run { adjustingSchedule = false }
+        }
+    }
+    
+    private func postponeWorkout(workout: Workout) {
+        let id = workout.trainingPlanWorkoutId
+        adjustingSchedule = true
+        Task {
+            do {
+                try await APIService.shared.postponeWorkout(workoutId: id)
+                await loadData() // refresh
+            } catch {
+            }
+            await MainActor.run { adjustingSchedule = false }
+        }
+    }
 }
 
 // MARK: - Workout Card
@@ -512,6 +695,8 @@ struct TrainingView: View {
 struct WorkoutCardView: View {
     let workout: Workout
     var initiallyExpanded: Bool = false
+    var onCancelSchedule: (() -> Void)? = nil
+    var onPostpone: (() -> Void)? = nil
     @State private var expanded = false
     
     var config: (icon: String, color: Color, label: String) {
@@ -575,6 +760,35 @@ struct WorkoutCardView: View {
                         ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                             StepCardView(step: step)
                         }
+                    }
+                    
+                    if onCancelSchedule != nil || onPostpone != nil {
+                        Divider().padding(.top, 6).padding(.bottom, 6)
+                        HStack(spacing: 24) {
+                            if let cancel = onCancelSchedule {
+                                Button(action: cancel) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "trash")
+                                        Text("删除本次排期")
+                                    }
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.red)
+                                }
+                            }
+                            if let postpone = onPostpone {
+                                Button(action: postpone) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock") 
+                                        Text("顺延其后所有")
+                                    }
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.orange)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
                     }
                 }
                 .padding(14)
