@@ -259,13 +259,31 @@ struct ActivityDetailView: View {
     
     @ViewBuilder
     func aiSection(_ analysis: AnalysisResult) -> some View {
+        let isPro = analysis.tier == "pro"
+        let modelStr: String
+        if let m = analysis.modelUsed, !m.isEmpty {
+            modelStr = " · " + (m.components(separatedBy: "/").last ?? m)
+        } else {
+            modelStr = ""
+        }
+        let badgeText = (isPro ? "🔬 深度" : "⚡️ 快速") + modelStr
+        
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.linearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text("AI 训练分析").font(.system(size: 16, weight: .semibold))
                 Spacer()
-                PillBadge(text: analysis.tier?.uppercased() ?? "", color: .purple)
+                Text(badgeText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isPro ? .purple : .secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(isPro ? Color.purple.opacity(0.12) : Color.gray.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(isPro ? Color.purple.opacity(0.25) : Color.gray.opacity(0.2), lineWidth: 1)
+                    )
             }
             
             MarkdownTextView(markdown: analysis.resultMd ?? "", baseFontSize: 13)
