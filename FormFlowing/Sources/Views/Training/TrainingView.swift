@@ -104,9 +104,40 @@ struct TrainingView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 顶部仪表盘栏 (替代系统 NavigationBar 防止截断)
+                // 顶部仪表盘栏
                 HStack(alignment: .center) {
-                    if let plan = selectedPlan {
+                    if plans.count > 1 {
+                        // 多计划：下拉选择器
+                        Menu {
+                            ForEach(plans) { plan in
+                                Button(action: {
+                                    selectedPlan = plan
+                                    if let startDate = plan.startDate, let d = dateFromString(startDate) {
+                                        currentMonth = d
+                                    }
+                                }) {
+                                    HStack {
+                                        Text(plan.source == "intervals" ? "🔄" : "🤖")
+                                        Text(plan.planName)
+                                        if plan.trainingPlanId == selectedPlan?.trainingPlanId {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(selectedPlan?.planName ?? "选择计划")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else if let plan = selectedPlan {
                         Text(plan.planName)
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.primary)
@@ -199,7 +230,7 @@ struct TrainingView: View {
                                     ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
                                         WorkoutCardView(
                                             workout: workout, 
-                                            initiallyExpanded: idx == 0,
+                                            initiallyExpanded: selectedDateWorkouts.count == 1 && idx == 0,
                                             onCancelSchedule: { workoutToCancel = workout },
                                             onPostpone: { workoutToPostpone = workout },
                                             onMoveTo: {
@@ -706,17 +737,35 @@ struct TrainingView: View {
             await MainActor.run {
                 self.plans = fetchedPlans
                 if let active = fetchedPlans.first(where: { $0.status == "active" }) ?? fetchedPlans.first {
-                    self.selectedPlan = active
+                    // 保留已选中的计划（如果还存在），否则选第一个
+                    if let current = self.selectedPlan,
+                       fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
+                        // 保持当前选择不变
+                    } else {
+                        self.selectedPlan = active
+                    }
                     currentPlanId = active.trainingPlanId
                 } else {
                     self.selectedPlan = nil
                 }
             }
-            if let planId = currentPlanId {
-                let detail = try await APIService.shared.getPlanDetail(planId: planId)
+            
+            // 加载所有计划的课程并合并
+            if !fetchedPlans.isEmpty {
+                var allWorkouts: [Workout] = []
+                for plan in fetchedPlans {
+                    do {
+                        let detail = try await APIService.shared.getPlanDetail(planId: plan.trainingPlanId)
+                        allWorkouts.append(contentsOf: detail.workouts)
+                    } catch {
+                        // 单个计划加载失败不影响其他计划
+                    }
+                }
                 await MainActor.run {
-                    self.workouts = detail.workouts
-                    if let startDate = self.selectedPlan?.startDate,
+                    self.workouts = allWorkouts
+                    // 导航到最新计划的起始月（仅首次加载时）
+                    if let firstPlan = fetchedPlans.first,
+                       let startDate = firstPlan.startDate,
                        let date = dateFromString(startDate) {
                         self.currentMonth = date
                     }

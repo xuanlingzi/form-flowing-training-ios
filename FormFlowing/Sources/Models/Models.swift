@@ -306,6 +306,7 @@ struct TrainingPlan: Codable, Identifiable {
     var id: Int { trainingPlanId }
     let trainingPlanId: Int
     let planName: String
+    let source: String?
     let description: String?
     let phase: String?
     let startDate: String?
