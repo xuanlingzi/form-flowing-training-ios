@@ -53,6 +53,8 @@ struct TrainingView: View {
     @State private var adjustingSchedule = false
     @State private var workoutToCancel: Workout?
     @State private var workoutToPostpone: Workout?
+    @State private var workoutToMove: Workout?
+    @State private var moveTargetDate = Date()
     
     // AI 生成
     @State private var showGenSheet = false
@@ -199,7 +201,13 @@ struct TrainingView: View {
                                             workout: workout, 
                                             initiallyExpanded: idx == 0,
                                             onCancelSchedule: { workoutToCancel = workout },
-                                            onPostpone: { workoutToPostpone = workout }
+                                            onPostpone: { workoutToPostpone = workout },
+                                            onMoveTo: {
+                                                if let d = dateFromString(workout.workoutDate ?? todayStr()) {
+                                                    moveTargetDate = d
+                                                }
+                                                workoutToMove = workout
+                                            }
                                         )
                                     }
                                 }
@@ -416,6 +424,96 @@ struct TrainingView: View {
                 Button("取消", role: .cancel) { workoutToPostpone = nil }
             } message: {
                 Text("这会将该排期及计划内所有后续课程统一向后顺延 1 天，并在佳明日历上同步修改。确定执行吗？")
+            }
+            .sheet(isPresented: Binding(
+                get: { workoutToMove != nil },
+                set: { if !$0 { workoutToMove = nil } }
+            )) {
+                if let wk = workoutToMove {
+                    NavigationView {
+                        VStack(spacing: 20) {
+                            // 当前课程信息
+                            VStack(spacing: 6) {
+                                let cfg = sportConfig[wk.sport ?? ""] ?? ("🏃", .gray, "活动")
+                                HStack(spacing: 8) {
+                                    Text(cfg.icon).font(.title2)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(wk.workoutName ?? "训练课程")
+                                            .font(.headline)
+                                        Text("当前日期: \(wk.workoutDate ?? "未知")")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .padding()
+                                .background(Color(UIColor.systemGray6))
+                                .cornerRadius(12)
+                                
+                                if wk.garminScheduleId != nil {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundColor(.orange)
+                                            .font(.caption)
+                                        Text("该课程已同步到 Garmin，移动后将同时更新 Garmin 日历")
+                                            .font(.caption)
+                                            .foregroundColor(.orange)
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+                            
+                            // 日期选择
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("选择目标日期")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal)
+                                
+                                DatePicker(
+                                    "目标日期",
+                                    selection: $moveTargetDate,
+                                    displayedComponents: .date
+                                )
+                                .datePickerStyle(.graphical)
+                                .tint(.teal)
+                                .padding(.horizontal)
+                            }
+                            
+                            Spacer()
+                            
+                            // 确认按钮
+                            Button(action: {
+                                let wkToMove = wk
+                                workoutToMove = nil
+                                rescheduleWorkout(workout: wkToMove, to: moveTargetDate)
+                            }) {
+                                HStack {
+                                    Image(systemName: "arrow.right.circle.fill")
+                                    let f = DateFormatter()
+                                    let _ = f.dateFormat = "M月d日"
+                                    Text("移动到 \(f.string(from: moveTargetDate))")
+                                }
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.teal)
+                                .cornerRadius(12)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom)
+                        }
+                        .navigationTitle("移动训练课程")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("取消") { workoutToMove = nil }
+                            }
+                        }
+                    }
+                    .presentationDetents([.large])
+                }
             }
             }
         }
@@ -770,6 +868,33 @@ struct TrainingView: View {
             await MainActor.run { adjustingSchedule = false }
         }
     }
+    
+    private func rescheduleWorkout(workout: Workout, to targetDate: Date) {
+        let id = workout.trainingPlanWorkoutId
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        let newDate = f.string(from: targetDate)
+        
+        // 如果日期没变则不操作
+        if newDate == workout.workoutDate { return }
+        
+        adjustingSchedule = true
+        Task {
+            do {
+                try await APIService.shared.rescheduleWorkout(workoutId: id, newDate: newDate)
+                await loadData()
+                await MainActor.run {
+                    // 切换到目标日期查看
+                    selectedDate = newDate
+                    if let d = dateFromString(newDate) {
+                        currentMonth = d
+                    }
+                }
+            } catch {
+                // Handle error implicitly
+            }
+            await MainActor.run { adjustingSchedule = false }
+        }
+    }
 }
 
 // MARK: - Workout Card
@@ -779,6 +904,7 @@ struct WorkoutCardView: View {
     var initiallyExpanded: Bool = false
     var onCancelSchedule: (() -> Void)? = nil
     var onPostpone: (() -> Void)? = nil
+    var onMoveTo: (() -> Void)? = nil
     @State private var expanded = false
     
     var config: (icon: String, color: Color, label: String) {
@@ -844,14 +970,14 @@ struct WorkoutCardView: View {
                         }
                     }
                     
-                    if onCancelSchedule != nil || onPostpone != nil {
+                    if onCancelSchedule != nil || onPostpone != nil || onMoveTo != nil {
                         Divider().padding(.top, 6).padding(.bottom, 6)
-                        HStack(spacing: 24) {
+                        HStack(spacing: 20) {
                             if let cancel = onCancelSchedule {
                                 Button(action: cancel) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "trash")
-                                        Text("删除本次排期")
+                                        Text("删除")
                                     }
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(.red)
@@ -861,10 +987,20 @@ struct WorkoutCardView: View {
                                 Button(action: postpone) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "clock") 
-                                        Text("顺延其后所有")
+                                        Text("顺延其后")
                                     }
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(.orange)
+                                }
+                            }
+                            if let moveTo = onMoveTo {
+                                Button(action: moveTo) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.right.circle")
+                                        Text("移动至")
+                                    }
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.teal)
                                 }
                             }
                             Spacer()

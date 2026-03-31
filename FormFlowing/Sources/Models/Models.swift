@@ -335,6 +335,7 @@ struct Workout: Codable, Identifiable {
     let durationMin: Int?
     let distanceKm: Double?
     let garminWorkoutId: Int?
+    let garminScheduleId: Int?
     let pushStatus: String?
     let steps: [WorkoutStep]?
 }

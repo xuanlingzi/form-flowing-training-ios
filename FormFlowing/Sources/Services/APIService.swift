@@ -317,6 +317,12 @@ final class APIService {
         try await requestVoid("/training/workout/\(workoutId)/postpone", method: "POST")
     }
     
+    func rescheduleWorkout(workoutId: Int, newDate: String) async throws {
+        try await requestVoid("/training/workout/\(workoutId)/reschedule", method: "PUT", body: [
+            "new_date": newDate
+        ])
+    }
+    
     // MARK: - 记忆
     
     func getMemories() async throws -> MemoryListResponse {
