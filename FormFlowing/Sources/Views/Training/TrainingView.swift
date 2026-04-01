@@ -112,6 +112,10 @@ struct TrainingView: View {
     var sheetPlan: TrainingPlan? {
         selectedPlan ?? plans.first(where: { $0.status == "active" }) ?? plans.first
     }
+
+    var shouldShowBottomDeletePlanButton: Bool {
+        !(plans.count > 1 && plans.contains(where: isAIGeneratedPlan))
+    }
     
     var body: some View {
         NavigationStack {
@@ -288,7 +292,35 @@ struct TrainingView: View {
             .sheet(isPresented: $showCalendarSheet) {
                 NavigationView {
                     ScrollView {
-                        calendarView
+                        VStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                Button(action: prevMonth) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.headline.weight(.semibold))
+                                        .foregroundColor(.primary)
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                Text(monthTitle)
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundColor(.primary)
+
+                                Spacer()
+
+                                Button(action: nextMonth) {
+                                    Image(systemName: "chevron.right")
+                                        .font(.headline.weight(.semibold))
+                                        .foregroundColor(.primary)
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            calendarView
+                        }
                             .padding()
                             .background(Color.white)
                             .cornerRadius(20)
@@ -309,85 +341,53 @@ struct TrainingView: View {
                 NavigationView {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("训练计划")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                                
-                                HStack(spacing: 10) {
-                                    Button(action: {
-                                        selectedPlan = nil
-                                        showPlanDetailsSheet = false
-                                    }) {
-                                        HStack {
-                                            Text("全部计划")
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.primary)
-                                                .lineLimit(1)
-                                            Spacer()
-                                            if selectedPlan == nil {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.teal)
-                                            }
-                                        }
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
-                                        .background(Color(UIColor.systemGray6))
-                                        .cornerRadius(10)
-                                    }
-                                    .buttonStyle(.plain)
+                            if plans.count > 1 {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("训练计划")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.secondary)
 
-                                    Color.clear.frame(width: 24, height: 24)
-                                }
-                                
-                                ForEach(plans) { item in
-                                    HStack(spacing: 10) {
-                                        Button(action: {
-                                            selectedPlan = item
-                                            if let startDate = item.startDate, let d = dateFromString(startDate) {
-                                                currentMonth = d
+                                    VStack(spacing: 10) {
+                                        planSelectionRow(
+                                            title: "全部计划",
+                                            isSelected: selectedPlan == nil,
+                                            action: {
+                                                selectedPlan = nil
+                                                showPlanDetailsSheet = false
                                             }
-                                            showPlanDetailsSheet = false
-                                        }) {
-                                            HStack {
-                                                Text(item.planName)
-                                                    .font(.subheadline.weight(.semibold))
-                                                    .foregroundColor(.primary)
-                                                    .lineLimit(1)
-                                                    .truncationMode(.tail)
-                                                Spacer()
-                                                if selectedPlan?.trainingPlanId == item.trainingPlanId {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundColor(.teal)
+                                        )
+
+                                        ForEach(plans) { item in
+                                            planSelectionRow(
+                                                title: item.planName,
+                                                isSelected: selectedPlan?.trainingPlanId == item.trainingPlanId,
+                                                action: {
+                                                    selectedPlan = item
+                                                    if let startDate = item.startDate, let d = dateFromString(startDate) {
+                                                        currentMonth = d
+                                                    }
+                                                    showPlanDetailsSheet = false
+                                                },
+                                                deleteAction: {
+                                                    planToDelete = item
+                                                    showDeleteAlert = true
                                                 }
-                                            }
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 8)
-                                            .background(Color(UIColor.systemGray6))
-                                            .cornerRadius(10)
+                                            )
                                         }
-                                        .buttonStyle(.plain)
-                                        
-                                        Button(role: .destructive) {
-                                            planToDelete = item
-                                            showDeleteAlert = true
-                                        } label: {
-                                            Image(systemName: "trash")
-                                                .foregroundColor(.red)
-                                                .frame(width: 24, height: 24)
-                                        }
-                                        .buttonStyle(.plain)
                                     }
+                                    .padding(12)
+                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 }
                             }
                             
-                            if let plan = sheetPlan {
+                            if let selectedPlan {
                                 Divider()
-                                
-                                Text(plan.planName)
+
+                                Text(selectedPlan.planName)
                                     .font(.title2.weight(.bold))
-                                
-                                if let weeks = plan.durationWeeks {
+
+                                if let weeks = selectedPlan.durationWeeks {
                                     HStack {
                                         Image(systemName: "calendar.badge.clock")
                                         Text("\(weeks) 周周期")
@@ -395,18 +395,18 @@ struct TrainingView: View {
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 }
-                                
+
                                 Divider()
-                                
-                                if let desc = plan.description {
+
+                                if let desc = selectedPlan.description {
                                     Text(desc)
                                         .font(.system(size: 15))
                                         .foregroundColor(.primary)
                                         .lineSpacing(4)
                                 }
-                                
-                                Spacer(minLength: 32)
-                                
+                            }
+
+                            if let plan = sheetPlan {
                                 VStack(spacing: 12) {
                                     Button(action: {
                                         showPlanDetailsSheet = false
@@ -444,23 +444,25 @@ struct TrainingView: View {
                                         .cornerRadius(12)
                                     }
                                     
-                                    Button(action: {
-                                        showPlanDetailsSheet = false
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            planToDelete = plan
-                                            showDeleteAlert = true
+                                    if shouldShowBottomDeletePlanButton {
+                                        Button(action: {
+                                            showPlanDetailsSheet = false
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                                planToDelete = plan
+                                                showDeleteAlert = true
+                                            }
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "trash")
+                                                Text("删除计划")
+                                            }
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.red)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .background(Color.red.opacity(0.1))
+                                            .cornerRadius(12)
                                         }
-                                    }) {
-                                        HStack {
-                                            Image(systemName: "trash")
-                                            Text("删除计划")
-                                        }
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.red)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 14)
-                                        .background(Color.red.opacity(0.1))
-                                        .cornerRadius(12)
                                     }
                                 }
                             }
@@ -636,7 +638,7 @@ struct TrainingView: View {
     }
     
     // MARK: - Calendar
-    
+
     var calendarView: some View {
         VStack(spacing: 4) {
             HStack {
@@ -703,6 +705,56 @@ struct TrainingView: View {
         }
         .padding(12).background(.white).cornerRadius(14)
     }
+
+    @ViewBuilder
+    private func planSelectionRow(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void,
+        deleteAction: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 10) {
+            Button(action: action) {
+                HStack(spacing: 12) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer()
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.teal)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(isSelected ? Color.teal.opacity(0.12) : Color(UIColor.systemBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(isSelected ? Color.teal.opacity(0.35) : Color.clear, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if let deleteAction {
+                Button(role: .destructive, action: deleteAction) {
+                    Image(systemName: "trash")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.red)
+                        .frame(width: 40, height: 40)
+                        .background(Color.red.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
     
     var workoutDates: Set<String> {
         Set(visibleWorkouts.compactMap { $0.workoutDate })
@@ -739,6 +791,11 @@ struct TrainingView: View {
     private func todayStr() -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: Date())
+    }
+
+    private func isAIGeneratedPlan(_ plan: TrainingPlan) -> Bool {
+        let source = plan.source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return source.contains("ai")
     }
     
     private func prevMonth() {
