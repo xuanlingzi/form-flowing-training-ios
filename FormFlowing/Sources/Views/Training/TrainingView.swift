@@ -37,11 +37,13 @@ struct TrainingView: View {
     @State private var plans: [TrainingPlan] = []
     @State private var selectedPlan: TrainingPlan?
     @State private var workouts: [Workout] = []
+    @State private var workoutsByPlan: [Int: [Workout]] = [:]
     @State private var workoutPlanMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
     @State private var loading = true
     @State private var currentMonth = Date()
     @State private var selectedDate: String?
     @State private var showDeleteAlert = false
+    @State private var planToDelete: TrainingPlan?
     @State private var showPlanDetailsSheet = false
     @State private var showCalendarSheet = false
     @State private var swipeDirection: TransitionDirection = .forward
@@ -99,7 +101,16 @@ struct TrainingView: View {
     
     var selectedDateWorkouts: [Workout] {
         guard let date = selectedDate else { return [] }
-        return workouts.filter { $0.workoutDate == date }
+        return visibleWorkouts.filter { $0.workoutDate == date }
+    }
+    
+    var visibleWorkouts: [Workout] {
+        guard let planId = selectedPlan?.trainingPlanId else { return workouts }
+        return workoutsByPlan[planId] ?? []
+    }
+    
+    var sheetPlan: TrainingPlan? {
+        selectedPlan ?? plans.first(where: { $0.status == "active" }) ?? plans.first
     }
     
     var body: some View {
@@ -108,13 +119,13 @@ struct TrainingView: View {
                 // 顶部标题栏（Apple Music 风格：静态大标题 + 右侧操作）
                 HStack(alignment: .center) {
                     Text("训练课程")
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
                     Spacer(minLength: 16)
                     
-                    if selectedPlan != nil {
+                    if !plans.isEmpty {
                         Button(action: { showPlanDetailsSheet = true }) {
                             Image(systemName: "ellipsis.circle")
                                 .font(.system(size: 22))
@@ -123,10 +134,9 @@ struct TrainingView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
-                .background(Color(UIColor.systemGroupedBackground))
+                .padding(.horizontal)
+                .frame(height: 44)
+                .background(Color(UIColor.systemBackground))
                 
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 16) {
@@ -183,8 +193,8 @@ struct TrainingView: View {
                                     .padding(.leading, 16)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 4)
+                        .padding(.horizontal)
+                        .padding(.bottom)
                         
                         // 1. 直切主题：当日训练卡片流
                         ZStack {
@@ -296,10 +306,84 @@ struct TrainingView: View {
                 .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showPlanDetailsSheet) {
-                if let plan = selectedPlan {
-                    NavigationView {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
+                NavigationView {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("训练计划")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 10) {
+                                    Button(action: {
+                                        selectedPlan = nil
+                                        showPlanDetailsSheet = false
+                                    }) {
+                                        HStack {
+                                            Text("全部计划")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
+                                            Spacer()
+                                            if selectedPlan == nil {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.teal)
+                                            }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(Color(UIColor.systemGray6))
+                                        .cornerRadius(10)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Color.clear.frame(width: 24, height: 24)
+                                }
+                                
+                                ForEach(plans) { item in
+                                    HStack(spacing: 10) {
+                                        Button(action: {
+                                            selectedPlan = item
+                                            if let startDate = item.startDate, let d = dateFromString(startDate) {
+                                                currentMonth = d
+                                            }
+                                            showPlanDetailsSheet = false
+                                        }) {
+                                            HStack {
+                                                Text(item.planName)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.tail)
+                                                Spacer()
+                                                if selectedPlan?.trainingPlanId == item.trainingPlanId {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                        .foregroundColor(.teal)
+                                                }
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 8)
+                                            .background(Color(UIColor.systemGray6))
+                                            .cornerRadius(10)
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button(role: .destructive) {
+                                            planToDelete = item
+                                            showDeleteAlert = true
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .foregroundColor(.red)
+                                                .frame(width: 24, height: 24)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            
+                            if let plan = sheetPlan {
+                                Divider()
+                                
                                 Text(plan.planName)
                                     .font(.title2.weight(.bold))
                                 
@@ -327,7 +411,7 @@ struct TrainingView: View {
                                     Button(action: {
                                         showPlanDetailsSheet = false
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            pushToGarmin()
+                                            pushToGarmin(plan)
                                         }
                                     }) {
                                         HStack {
@@ -363,6 +447,7 @@ struct TrainingView: View {
                                     Button(action: {
                                         showPlanDetailsSheet = false
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            planToDelete = plan
                                             showDeleteAlert = true
                                         }
                                     }) {
@@ -379,24 +464,29 @@ struct TrainingView: View {
                                     }
                                 }
                             }
-                            .padding(20)
                         }
-                        .navigationTitle("计划详情")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("关闭") { showPlanDetailsSheet = false }
-                            }
+                        .padding(20)
+                    }
+                    .navigationTitle("计划详情")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showPlanDetailsSheet = false }
                         }
                     }
-                    .presentationDetents([.medium, .large])
                 }
+                .presentationDetents([.medium, .large])
             }
             .alert("删除训练计划", isPresented: $showDeleteAlert) {
-                Button("删除", role: .destructive) { deletePlan() }
-                Button("取消", role: .cancel) {}
+                Button("删除", role: .destructive) {
+                    if let plan = planToDelete {
+                        deletePlan(plan)
+                    }
+                    planToDelete = nil
+                }
+                Button("取消", role: .cancel) { planToDelete = nil }
             } message: {
-                Text("确定要删除当前训练计划吗？此操作不可恢复。")
+                Text("确定要删除该训练计划吗？此操作不可恢复。")
             }
             .alert("删除排期", isPresented: Binding(
                 get: { workoutToCancel != nil },
@@ -522,7 +612,7 @@ struct TrainingView: View {
     
     private var bottomActions: some View {
         Group {
-            if selectedPlan == nil {
+            if plans.isEmpty {
                 HStack(spacing: 12) {
                     Button(action: { showGenSheet = true }) {
                         HStack(spacing: 4) {
@@ -539,9 +629,8 @@ struct TrainingView: View {
                         .cornerRadius(12)
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 30)
+                .padding(.horizontal)
+                .padding(.vertical)
             }
         }
     }
@@ -567,7 +656,7 @@ struct TrainingView: View {
                             let hasWorkout = workoutDates.contains(d)
                             let isToday = d == todayStr()
                             let isSelected = d == selectedDate
-                            let dayWorkouts = workouts.filter { $0.workoutDate == d }
+                            let dayWorkouts = visibleWorkouts.filter { $0.workoutDate == d }
                             
                             Button(action: { 
                                 if let curr = selectedDate, let currDate = dateFromString(curr), let newDate = dateFromString(d) {
@@ -616,7 +705,7 @@ struct TrainingView: View {
     }
     
     var workoutDates: Set<String> {
-        Set(workouts.compactMap { $0.workoutDate })
+        Set(visibleWorkouts.compactMap { $0.workoutDate })
     }
     
     // MARK: - Calendar Helpers
@@ -702,28 +791,24 @@ struct TrainingView: View {
             
             await MainActor.run {
                 self.plans = fetchedPlans
-                if let active = fetchedPlans.first(where: { $0.status == "active" }) ?? fetchedPlans.first {
-                    // 保留已选中的计划（如果还存在），否则选第一个
-                    if let current = self.selectedPlan,
-                       fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
-                        // 保持当前选择不变
-                    } else {
-                        self.selectedPlan = active
-                    }
-                    currentPlanId = active.trainingPlanId
-                } else {
+                if let current = self.selectedPlan,
+                   !fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
                     self.selectedPlan = nil
                 }
+                currentPlanId = fetchedPlans.first(where: { $0.status == "active" })?.trainingPlanId
+                    ?? fetchedPlans.first?.trainingPlanId
             }
             
             // 加载所有计划的课程并合并
             if !fetchedPlans.isEmpty {
                 var allWorkouts: [Workout] = []
+                var groupedWorkouts: [Int: [Workout]] = [:]
                 var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
                 for plan in fetchedPlans {
                     do {
                         let detail = try await APIService.shared.getPlanDetail(planId: plan.trainingPlanId)
                         allWorkouts.append(contentsOf: detail.workouts)
+                        groupedWorkouts[plan.trainingPlanId] = detail.workouts
                         for workout in detail.workouts {
                             planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
                                 title: plan.planName,
@@ -736,6 +821,7 @@ struct TrainingView: View {
                 }
                 await MainActor.run {
                     self.workouts = allWorkouts
+                    self.workoutsByPlan = groupedWorkouts
                     self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
                     // 导航到最新计划的起始月（仅首次加载时）
                     if let firstPlan = fetchedPlans.first,
@@ -748,6 +834,7 @@ struct TrainingView: View {
             } else {
                 await MainActor.run {
                     self.workouts = []
+                    self.workoutsByPlan = [:]
                     self.workoutPlanMetaByWorkoutId = [:]
                     self.loading = false
                 }
@@ -767,19 +854,22 @@ struct TrainingView: View {
         return f.date(from: s)
     }
     
-    private func deletePlan() {
-        guard let plan = selectedPlan else { return }
+    private func deletePlan(_ plan: TrainingPlan) {
         Task {
             try? await APIService.shared.deletePlan(planId: plan.trainingPlanId)
             await MainActor.run {
-                selectedPlan = nil; workouts = []; workoutPlanMetaByWorkoutId = [:]
+                if selectedPlan?.trainingPlanId == plan.trainingPlanId {
+                    selectedPlan = nil
+                }
+                workouts = []
+                workoutsByPlan = [:]
+                workoutPlanMetaByWorkoutId = [:]
             }
             await loadData()
         }
     }
     
-    private func pushToGarmin() {
-        guard let plan = selectedPlan else { return }
+    private func pushToGarmin(_ plan: TrainingPlan) {
         Task {
             do {
                 try await APIService.shared.pushPlanToGarmin(planId: plan.trainingPlanId)
@@ -814,6 +904,7 @@ struct TrainingView: View {
                 await MainActor.run {
                     self.selectedPlan = nil
                     self.workouts = []
+                    self.workoutsByPlan = [:]
                     self.workoutPlanMetaByWorkoutId = [:]
                     self.plans.removeAll { $0.trainingPlanId == oldId }
                 }
@@ -844,11 +935,15 @@ struct TrainingView: View {
                     if let latest = newPlans.first, latest.trainingPlanId != oldPlanId {
                         await MainActor.run { 
                             self.plans = newPlans
-                            self.selectedPlan = latest
+                            if let current = self.selectedPlan,
+                               !newPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
+                                self.selectedPlan = nil
+                            }
                         }
                         let detail = try await APIService.shared.getPlanDetail(planId: latest.trainingPlanId)
                         await MainActor.run {
                             self.workouts = detail.workouts
+                            self.workoutsByPlan = [latest.trainingPlanId: detail.workouts]
                             var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
                             for workout in detail.workouts {
                                 planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (

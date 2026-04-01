@@ -75,12 +75,9 @@ struct SettingsView: View {
                 .padding(4)
                 .background(Color(UIColor.systemGray5))
                 .cornerRadius(14)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Color(UIColor.systemBackground)
-                        .shadow(.drop(color: .black.opacity(0.04), radius: 4, y: 2))
-                )
+                .padding(.horizontal)
+                .frame(height: 44)
+                .background(Color(UIColor.systemBackground))
             }
             .background(Color(UIColor.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
@@ -975,17 +972,16 @@ struct TabButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 if let icon = icon {
-                    Image(systemName: icon).font(.caption)
+                    Image(systemName: icon).font(.caption2)
                 }
                 Text(title)
             }
-            .font(.subheadline.weight(active ? .semibold : .regular))
+            .font(.footnote.weight(active ? .semibold : .regular))
             .foregroundColor(active ? .primary : .secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 28)
             .padding(.horizontal, 8)
             .background(active ? Color.white : Color.clear)
-            .cornerRadius(10)
+            .cornerRadius(8)
         }
     }
 }

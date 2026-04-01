@@ -56,8 +56,8 @@ struct ActivitiesView: View {
                                 .animation(.easeOut(duration: 0.4).delay(Double(min(idx, 8)) * 0.05), value: appear)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal)
+                        .padding(.vertical)
                         
                         // 分页
                         paginationBar
@@ -93,11 +93,9 @@ struct ActivitiesView: View {
     }
     
     private var activitiesHeader: some View {
-        let titleSize: CGFloat = 30 - 10 * collapseProgress
-        
-        return HStack(alignment: .bottom) {
+        return HStack(alignment: .center) {
             Text("运动日志")
-                .font(.system(size: titleSize, weight: .bold))
+                .font(.system(size: 20, weight: .bold))
             Spacer()
             NavigationLink(destination: UploadView()) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -105,14 +103,9 @@ struct ActivitiesView: View {
                     .foregroundStyle(.linearGradient(colors: [.teal, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12 - 4 * collapseProgress)
-        .padding(.bottom, 12 - 4 * collapseProgress)
-        .background(
-            Color(UIColor.systemBackground)
-                .shadow(.drop(color: .black.opacity(0.06 * collapseProgress), radius: 4, y: 2))
-        )
-        .animation(.interactiveSpring(response: 0.3), value: collapseProgress)
+        .padding(.horizontal)
+        .frame(height: 44)
+        .background(Color(UIColor.systemBackground))
     }
     
     // MARK: - Pagination
@@ -148,7 +141,7 @@ struct ActivitiesView: View {
             .disabled(activities.count < 20)
             .opacity(activities.count < 20 ? 0.4 : 1)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical)
     }
     
     private func loadActivities() async {
@@ -266,7 +259,7 @@ struct ActivityCard: View {
             }
             .padding(16)
             
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal)
             
             // 核心指标
             HStack(spacing: 0) {
@@ -286,7 +279,7 @@ struct ActivityCard: View {
             
             // AI 分析摘要
             if let summary = analysisSummary {
-                Divider().padding(.horizontal, 16)
+                Divider().padding(.horizontal)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     // 结论
@@ -354,7 +347,7 @@ struct ActivityCard: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
+                .padding(.horizontal).padding(.vertical, 10)
             }
         }
         .background(.white)

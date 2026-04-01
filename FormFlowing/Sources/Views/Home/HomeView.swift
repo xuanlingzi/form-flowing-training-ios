@@ -59,7 +59,7 @@ struct HomeView: View {
                             // HRV（全宽）
                             hrvCard(s)
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal)
                         .opacity(appear ? 1 : 0)
                         .offset(y: appear ? 0 : 15)
                         .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
@@ -73,7 +73,7 @@ struct HomeView: View {
                         }
                     }
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom)
                 .background(
                     GeometryReader { geo in
                         Color.clear.preference(
@@ -90,12 +90,7 @@ struct HomeView: View {
             .safeAreaInset(edge: .top) {
                 collapsibleHeader
             }
-            .background(
-                LinearGradient(
-                    colors: [Color.teal.opacity(0.06), Color(UIColor.systemGroupedBackground)],
-                    startPoint: .top, endPoint: .center
-                )
-            )
+            .background(Color(UIColor.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 // 下拉同时触发 Garmin 同步
@@ -112,22 +107,18 @@ struct HomeView: View {
     // MARK: - 可折叠头部
     
     var collapsibleHeader: some View {
-        let expandedSize: CGFloat = 30
-        let collapsedSize: CGFloat = 20
-        let nameSize = expandedSize - (expandedSize - collapsedSize) * collapseProgress
-        
-        let expandedGreetingSize: CGFloat = 14
-        let collapsedGreetingSize: CGFloat = 11
-        let greetingSize = expandedGreetingSize - (expandedGreetingSize - collapsedGreetingSize) * collapseProgress
-        
-        return VStack(spacing: 0) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 2 * (1 - collapseProgress)) {
+        let nameSize: CGFloat = 20
+        let greetingSize: CGFloat = 11
+
+        return HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(greeting)
                         .font(.system(size: greetingSize))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                     Text(auth.username)
                         .font(.system(size: nameSize, weight: .bold))
+                        .lineLimit(1)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -135,6 +126,7 @@ struct HomeView: View {
                         Text(device)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                     if let syncTime = garminStatus?.garminSyncedAt {
                         Text("同步 " + String(syncTime.suffix(8).prefix(5)))
@@ -142,16 +134,10 @@ struct HomeView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 12 - 4 * collapseProgress)
-            .padding(.bottom, 12 - 4 * collapseProgress)
         }
-        .background(
-            Color(UIColor.systemBackground)
-                .shadow(.drop(color: .black.opacity(0.06 * collapseProgress), radius: 4, y: 2))
-        )
-        .animation(.interactiveSpring(response: 0.3), value: collapseProgress)
+        .padding(.horizontal)
+        .frame(height: 44)
+        .background(Color(UIColor.systemBackground))
     }
     
     // MARK: - Card 1: 训练状态
@@ -503,7 +489,7 @@ struct HomeView: View {
                     .foregroundStyle(.linearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text("最近 AI 分析").font(.system(size: 17, weight: .semibold))
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal)
             
             ForEach(recentActivities) { act in
                 NavigationLink(destination: ActivityDetailView(activityId: act.id)) {
@@ -592,7 +578,7 @@ struct HomeView: View {
                     .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal)
         }
     }
     
