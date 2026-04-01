@@ -128,9 +128,6 @@ struct MemoryView: View {
             do {
                 try await APIService.shared.updateMemory(type: type, content: content)
                 await MainActor.run {
-                    if let idx = memories.firstIndex(where: { $0.type == type }) {
-                        // Reload
-                    }
                     editingTypes.remove(type)
                     saving = false
                 }

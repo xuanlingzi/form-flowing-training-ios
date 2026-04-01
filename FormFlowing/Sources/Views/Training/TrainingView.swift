@@ -46,6 +46,7 @@ struct TrainingView: View {
     @State private var planToDelete: TrainingPlan?
     @State private var showPlanDetailsSheet = false
     @State private var showCalendarSheet = false
+    @State private var showPlanRegenerateSheet = false
     @State private var swipeDirection: TransitionDirection = .forward
     
     enum TransitionDirection {
@@ -353,7 +354,6 @@ struct TrainingView: View {
                                             isSelected: selectedPlan == nil,
                                             action: {
                                                 selectedPlan = nil
-                                                showPlanDetailsSheet = false
                                             }
                                         )
 
@@ -366,7 +366,6 @@ struct TrainingView: View {
                                                     if let startDate = item.startDate, let d = dateFromString(startDate) {
                                                         currentMonth = d
                                                     }
-                                                    showPlanDetailsSheet = false
                                                 },
                                                 deleteAction: {
                                                     planToDelete = item
@@ -381,13 +380,13 @@ struct TrainingView: View {
                                 }
                             }
                             
-                            if let selectedPlan {
+                            if let detailPlan = selectedPlan ?? (plans.count == 1 ? sheetPlan : nil) {
                                 Divider()
 
-                                Text(selectedPlan.planName)
+                                Text(detailPlan.planName)
                                     .font(.title2.weight(.bold))
 
-                                if let weeks = selectedPlan.durationWeeks {
+                                if let weeks = detailPlan.durationWeeks {
                                     HStack {
                                         Image(systemName: "calendar.badge.clock")
                                         Text("\(weeks) 周周期")
@@ -398,7 +397,7 @@ struct TrainingView: View {
 
                                 Divider()
 
-                                if let desc = selectedPlan.description {
+                                if let desc = detailPlan.description {
                                     Text(desc)
                                         .font(.system(size: 15))
                                         .foregroundColor(.primary)
@@ -409,10 +408,7 @@ struct TrainingView: View {
                             if let plan = sheetPlan {
                                 VStack(spacing: 12) {
                                     Button(action: {
-                                        showPlanDetailsSheet = false
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            pushToGarmin(plan)
-                                        }
+                                        pushToGarmin(plan)
                                     }) {
                                         HStack {
                                             Image(systemName: "arrow.up.circle")
@@ -427,10 +423,7 @@ struct TrainingView: View {
                                     }
                                     
                                     Button(action: {
-                                        showPlanDetailsSheet = false
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            showGenSheet = true
-                                        }
+                                        showPlanRegenerateSheet = true
                                     }) {
                                         HStack {
                                             Image(systemName: "sparkles")
@@ -446,11 +439,8 @@ struct TrainingView: View {
                                     
                                     if shouldShowBottomDeletePlanButton {
                                         Button(action: {
-                                            showPlanDetailsSheet = false
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                                planToDelete = plan
-                                                showDeleteAlert = true
-                                            }
+                                            planToDelete = plan
+                                            showDeleteAlert = true
                                         }) {
                                             HStack {
                                                 Image(systemName: "trash")
@@ -475,6 +465,17 @@ struct TrainingView: View {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("关闭") { showPlanDetailsSheet = false }
                         }
+                    }
+                    .sheet(isPresented: $showPlanRegenerateSheet) {
+                        GeneratePlanSheet(
+                            genGoal: $genGoal,
+                            genSports: $genSports,
+                            genTrainDays: $genTrainDays,
+                            genTssLevel: $genTssLevel,
+                            genWeeks: $genWeeks,
+                            generating: $generating,
+                            onGenerate: generatePlan
+                        )
                     }
                 }
                 .presentationDetents([.medium, .large])
@@ -913,16 +914,31 @@ struct TrainingView: View {
     
     private func deletePlan(_ plan: TrainingPlan) {
         Task {
+            let wasShowingPlanDetails = await MainActor.run { showPlanDetailsSheet }
+            let fallbackSelectedPlanId = await MainActor.run { () -> Int? in
+                let deletingCurrentSelection = selectedPlan?.trainingPlanId == plan.trainingPlanId
+                guard deletingCurrentSelection else {
+                    return selectedPlan?.trainingPlanId
+                }
+
+                let remainingPlans = plans.filter { $0.trainingPlanId != plan.trainingPlanId }
+                return remainingPlans.first(where: { $0.status == "active" })?.trainingPlanId
+                    ?? remainingPlans.first?.trainingPlanId
+            }
+
             try? await APIService.shared.deletePlan(planId: plan.trainingPlanId)
+            await loadData()
             await MainActor.run {
-                if selectedPlan?.trainingPlanId == plan.trainingPlanId {
+                if let fallbackSelectedPlanId {
+                    selectedPlan = plans.first(where: { $0.trainingPlanId == fallbackSelectedPlanId })
+                } else if selectedPlan?.trainingPlanId == plan.trainingPlanId {
                     selectedPlan = nil
                 }
-                workouts = []
-                workoutsByPlan = [:]
-                workoutPlanMetaByWorkoutId = [:]
+
+                if wasShowingPlanDetails {
+                    showPlanDetailsSheet = true
+                }
             }
-            await loadData()
         }
     }
     
