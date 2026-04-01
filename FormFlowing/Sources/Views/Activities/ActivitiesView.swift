@@ -93,7 +93,7 @@ struct ActivitiesView: View {
     }
     
     private var activitiesHeader: some View {
-        let titleSize: CGFloat = 26 - 10 * collapseProgress
+        let titleSize: CGFloat = 30 - 10 * collapseProgress
         
         return HStack(alignment: .bottom) {
             Text("运动日志")

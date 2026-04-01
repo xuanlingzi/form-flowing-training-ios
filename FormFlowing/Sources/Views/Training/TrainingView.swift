@@ -37,6 +37,7 @@ struct TrainingView: View {
     @State private var plans: [TrainingPlan] = []
     @State private var selectedPlan: TrainingPlan?
     @State private var workouts: [Workout] = []
+    @State private var workoutPlanMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
     @State private var loading = true
     @State private var currentMonth = Date()
     @State private var selectedDate: String?
@@ -104,50 +105,12 @@ struct TrainingView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 顶部仪表盘栏
+                // 顶部标题栏（Apple Music 风格：静态大标题 + 右侧操作）
                 HStack(alignment: .center) {
-                    if plans.count > 1 {
-                        // 多计划：下拉选择器
-                        Menu {
-                            ForEach(plans) { plan in
-                                Button(action: {
-                                    selectedPlan = plan
-                                    if let startDate = plan.startDate, let d = dateFromString(startDate) {
-                                        currentMonth = d
-                                    }
-                                }) {
-                                    HStack {
-                                        Text(plan.source == "intervals" ? "🔄" : "🤖")
-                                        Text(plan.planName)
-                                        if plan.trainingPlanId == selectedPlan?.trainingPlanId {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(selectedPlan?.planName ?? "选择计划")
-                                    .font(.system(size: 22, weight: .bold))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    } else if let plan = selectedPlan {
-                        Text(plan.planName)
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    } else {
-                        Text("近期无计划")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.primary)
-                    }
+                    Text("训练课程")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
                     
                     Spacer(minLength: 16)
                     
@@ -161,8 +124,8 @@ struct TrainingView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
                 .background(Color(UIColor.systemGroupedBackground))
                 
                 ScrollView(.vertical, showsIndicators: true) {
@@ -228,9 +191,12 @@ struct TrainingView: View {
                             if !selectedDateWorkouts.isEmpty {
                                 VStack(alignment: .leading, spacing: 14) {
                                     ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
+                                        let planMeta = workoutPlanMetaByWorkoutId[workout.trainingPlanWorkoutId]
                                         WorkoutCardView(
                                             workout: workout, 
-                                            initiallyExpanded: selectedDateWorkouts.count == 1 && idx == 0,
+                                            initiallyExpanded: plans.count == 1 && selectedDateWorkouts.count == 1 && idx == 0,
+                                            planTitle: planMeta?.title,
+                                            planIntro: planMeta?.intro,
                                             onCancelSchedule: { workoutToCancel = workout },
                                             onPostpone: { workoutToPostpone = workout },
                                             onMoveTo: {
@@ -753,16 +719,24 @@ struct TrainingView: View {
             // 加载所有计划的课程并合并
             if !fetchedPlans.isEmpty {
                 var allWorkouts: [Workout] = []
+                var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
                 for plan in fetchedPlans {
                     do {
                         let detail = try await APIService.shared.getPlanDetail(planId: plan.trainingPlanId)
                         allWorkouts.append(contentsOf: detail.workouts)
+                        for workout in detail.workouts {
+                            planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
+                                title: plan.planName,
+                                intro: plan.description
+                            )
+                        }
                     } catch {
                         // 单个计划加载失败不影响其他计划
                     }
                 }
                 await MainActor.run {
                     self.workouts = allWorkouts
+                    self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
                     // 导航到最新计划的起始月（仅首次加载时）
                     if let firstPlan = fetchedPlans.first,
                        let startDate = firstPlan.startDate,
@@ -774,6 +748,7 @@ struct TrainingView: View {
             } else {
                 await MainActor.run {
                     self.workouts = []
+                    self.workoutPlanMetaByWorkoutId = [:]
                     self.loading = false
                 }
             }
@@ -797,7 +772,7 @@ struct TrainingView: View {
         Task {
             try? await APIService.shared.deletePlan(planId: plan.trainingPlanId)
             await MainActor.run {
-                selectedPlan = nil; workouts = []
+                selectedPlan = nil; workouts = []; workoutPlanMetaByWorkoutId = [:]
             }
             await loadData()
         }
@@ -839,6 +814,7 @@ struct TrainingView: View {
                 await MainActor.run {
                     self.selectedPlan = nil
                     self.workouts = []
+                    self.workoutPlanMetaByWorkoutId = [:]
                     self.plans.removeAll { $0.trainingPlanId == oldId }
                 }
             }
@@ -873,6 +849,14 @@ struct TrainingView: View {
                         let detail = try await APIService.shared.getPlanDetail(planId: latest.trainingPlanId)
                         await MainActor.run {
                             self.workouts = detail.workouts
+                            var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
+                            for workout in detail.workouts {
+                                planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
+                                    title: latest.planName,
+                                    intro: latest.description
+                                )
+                            }
+                            self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
                             if let startDate = latest.startDate, let d = self.dateFromString(startDate) {
                                 self.currentMonth = d
                             }
@@ -951,6 +935,8 @@ struct TrainingView: View {
 struct WorkoutCardView: View {
     let workout: Workout
     var initiallyExpanded: Bool = false
+    var planTitle: String? = nil
+    var planIntro: String? = nil
     var onCancelSchedule: (() -> Void)? = nil
     var onPostpone: (() -> Void)? = nil
     var onMoveTo: (() -> Void)? = nil
@@ -958,6 +944,24 @@ struct WorkoutCardView: View {
     
     var config: (icon: String, color: Color, label: String) {
         sportConfig[workout.sport ?? ""] ?? ("🏃", .gray, workout.sport ?? "活动")
+    }
+    
+    private var displayPlanTitle: String {
+        let title = planTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let title, !title.isEmpty {
+            return title
+        }
+        return "训练计划"
+    }
+    
+    private var displayPlanIntro: String {
+        guard let desc = planIntro?
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !desc.isEmpty else {
+            return "暂无训练计划简介"
+        }
+        return desc
     }
     
     var body: some View {
@@ -1060,6 +1064,25 @@ struct WorkoutCardView: View {
                 }
                 .padding(14)
             }
+            
+            Divider().padding(.horizontal, 14)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(displayPlanTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(displayPlanIntro)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
         .background(Color.white)
         .cornerRadius(16)

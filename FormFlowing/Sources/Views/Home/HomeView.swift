@@ -112,8 +112,8 @@ struct HomeView: View {
     // MARK: - 可折叠头部
     
     var collapsibleHeader: some View {
-        let expandedSize: CGFloat = 26
-        let collapsedSize: CGFloat = 16
+        let expandedSize: CGFloat = 30
+        let collapsedSize: CGFloat = 20
         let nameSize = expandedSize - (expandedSize - collapsedSize) * collapseProgress
         
         let expandedGreetingSize: CGFloat = 14
