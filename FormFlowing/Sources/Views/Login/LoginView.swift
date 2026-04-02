@@ -142,7 +142,7 @@ struct LoginView: View {
                 }
                 let res = try await APIService.shared.login(username: username, password: password)
                 await MainActor.run {
-                    auth.login(accessToken: res.accessToken, refreshToken: res.refreshToken, username: username)
+                    auth.login(accessToken: res.accessToken, refreshToken: res.refreshToken, username: username, tier: res.tier, tierExpiresAt: res.tierExpiresAt)
                 }
             } catch {
                 await MainActor.run {

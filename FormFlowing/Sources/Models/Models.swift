@@ -7,6 +7,8 @@ struct LoginResponse: Codable, Sendable {
     let refreshToken: String?
     let tokenType: String?
     let username: String?
+    let tier: String?
+    let tierExpiresAt: String?
 }
 
 // MARK: - Account
@@ -393,3 +395,64 @@ struct MetricDisplayItem {
     let value: String
     let unit: String
 }
+
+// MARK: - Subscription
+
+struct SubscriptionStatusResponse: Codable, Sendable {
+    let tier: String
+    let status: String
+    let startedAt: String?
+    let expiresAt: String?
+    let autoRenew: Bool?
+    let limits: [String: AnyCodableValue]?
+}
+
+struct UsageQuotaItem: Codable, Sendable {
+    let quotaType: String
+    let period: String
+    let periodKey: String
+    let usedCount: Int
+    let maxCount: Int
+    let remaining: Int
+}
+
+struct UsageResponse: Codable, Sendable {
+    let tier: String
+    let period: String
+    let quotas: [UsageQuotaItem]
+}
+
+/// 用于解析 limits 中的混合类型值（bool / int / string）
+enum AnyCodableValue: Codable, Sendable {
+    case int(Int)
+    case bool(Bool)
+    case string(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let v = try? container.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+        self = .string("")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .int(let v): try container.encode(v)
+        case .bool(let v): try container.encode(v)
+        case .string(let v): try container.encode(v)
+        }
+    }
+
+    var intValue: Int? {
+        if case .int(let v) = self { return v }
+        return nil
+    }
+
+    var boolValue: Bool? {
+        if case .bool(let v) = self { return v }
+        return nil
+    }
+}
+

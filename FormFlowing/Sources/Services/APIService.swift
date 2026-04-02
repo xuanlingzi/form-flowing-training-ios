@@ -189,7 +189,9 @@ final class APIService: @unchecked Sendable {
             await AuthManager.shared.login(
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken,
-                username: response.username ?? ""
+                username: response.username ?? "",
+                tier: response.tier,
+                tierExpiresAt: response.tierExpiresAt
             )
 
             return response.accessToken
@@ -413,6 +415,16 @@ final class APIService: @unchecked Sendable {
     
     func generateTrainingPlan(req: [String: Any]) async throws {
         try await requestVoid("/training/plan/generate", method: "POST", body: req, timeout: 120)
+    }
+
+    // MARK: - 订阅
+
+    func getSubscriptionStatus() async throws -> SubscriptionStatusResponse {
+        return try await request("/subscription")
+    }
+
+    func getSubscriptionUsage() async throws -> UsageResponse {
+        return try await request("/subscription/usage")
     }
     
     // MARK: - 文件上传

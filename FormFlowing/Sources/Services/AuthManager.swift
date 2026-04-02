@@ -9,29 +9,49 @@ final class AuthManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var username: String = ""
     @Published var token: String = ""
+    @Published var tier: String = "free"
+    @Published var tierExpiresAt: String? = nil
+
+    var isPro: Bool { tier == "pro" || tier == "team" }
 
     private let accessTokenKey = "access_token"
     private let usernameKey = "username"
     private let keychainService = "com.formflowing.ios.auth"
     private let keychainAccount = "saved_refresh_token"
 
+    private let tierKey = "tier"
+    private let tierExpiresKey = "tier_expires_at"
+
     private init() {
         let savedToken = UserDefaults.standard.string(forKey: accessTokenKey) ?? ""
         let savedUsername = UserDefaults.standard.string(forKey: usernameKey) ?? ""
+        let savedTier = UserDefaults.standard.string(forKey: tierKey) ?? "free"
+        let savedTierExpires = UserDefaults.standard.string(forKey: tierExpiresKey)
         if !savedToken.isEmpty {
             token = savedToken
             username = savedUsername
+            tier = savedTier
+            tierExpiresAt = savedTierExpires
             isAuthenticated = true
         }
     }
 
-    func login(accessToken: String, refreshToken: String?, username: String) {
+    func login(accessToken: String, refreshToken: String?, username: String,
+               tier: String? = nil, tierExpiresAt: String? = nil) {
         self.token = accessToken
         self.username = username
+        self.tier = tier ?? "free"
+        self.tierExpiresAt = tierExpiresAt
         isAuthenticated = true
 
         UserDefaults.standard.set(accessToken, forKey: accessTokenKey)
         UserDefaults.standard.set(username, forKey: usernameKey)
+        UserDefaults.standard.set(self.tier, forKey: tierKey)
+        if let tierExpiresAt {
+            UserDefaults.standard.set(tierExpiresAt, forKey: tierExpiresKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: tierExpiresKey)
+        }
 
         if let refreshToken, !refreshToken.isEmpty {
             saveRefreshToken(refreshToken)
@@ -61,10 +81,14 @@ final class AuthManager: ObservableObject {
     func logout(clearStoredCredentials: Bool = false) {
         token = ""
         username = ""
+        tier = "free"
+        tierExpiresAt = nil
         isAuthenticated = false
 
         UserDefaults.standard.removeObject(forKey: accessTokenKey)
         UserDefaults.standard.removeObject(forKey: usernameKey)
+        UserDefaults.standard.removeObject(forKey: tierKey)
+        UserDefaults.standard.removeObject(forKey: tierExpiresKey)
 
         if clearStoredCredentials {
             deleteRefreshToken()

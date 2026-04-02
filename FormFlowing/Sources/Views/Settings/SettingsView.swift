@@ -192,8 +192,58 @@ struct SettingsView: View {
                 .background(Color(UIColor.systemGray6))
                 .cornerRadius(12)
             }
+            
+            // 会员状态卡片
+            subscriptionCard
         }
         .padding(16).background(.white).cornerRadius(16)
+    }
+    
+    var subscriptionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "crown.fill")
+                    .font(.title2)
+                    .foregroundStyle(auth.isPro
+                        ? LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(colors: [.gray, .gray.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("会员等级").font(.headline)
+                        Text(auth.tier.uppercased())
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(auth.isPro
+                                ? LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
+                                : LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
+                            .cornerRadius(6)
+                    }
+                    if let expiresAt = auth.tierExpiresAt {
+                        Text("到期时间：\(expiresAt.prefix(10))").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            if !auth.isPro {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles").foregroundColor(.orange)
+                    Text("升级 Pro 解锁 AI 深度分析、Strava/Intervals 同步等高级功能")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(10)
+            }
+        }
+        .padding(14)
+        .background(auth.isPro ? Color.orange.opacity(0.05) : Color(UIColor.systemGray6))
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(auth.isPro ? Color.orange.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
     }
     
     // MARK: - Data Sources Tab (merged: Garmin + iGPSport + Intervals + Strava + Sync)
@@ -295,7 +345,15 @@ struct SettingsView: View {
                 // CN/Global 双区同步 Toggle (auto-save)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("CN/Global 双区同步").font(.subheadline.weight(.medium))
+                        HStack(spacing: 4) {
+                            Text("CN/Global 双区同步").font(.subheadline.weight(.medium))
+                            if !auth.isPro {
+                                Text("PRO").font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4).padding(.vertical, 1)
+                                    .background(Color.orange).cornerRadius(4)
+                            }
+                        }
                         Text("自动同步中国区和国际区的活动数据").font(.caption2).foregroundColor(.secondary)
                     }
                     Spacer()
@@ -306,6 +364,7 @@ struct SettingsView: View {
                             autoSaveSyncSetting(["sync_cn_global": newVal])
                         }
                     )).labelsHidden().tint(.teal)
+                    .disabled(!auth.isPro)
                 }
             }
             .padding(16).background(.white).cornerRadius(16)
@@ -455,6 +514,12 @@ struct SettingsView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.circle.fill").font(.caption).foregroundColor(.orange)
                             Text("自动直传 Strava").font(.subheadline.weight(.medium))
+                            if !auth.isPro {
+                                Text("PRO").font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4).padding(.vertical, 1)
+                                    .background(Color.orange).cornerRadius(4)
+                            }
                         }
                         Text("从 CN 区拉取 FIT 文件直接上传到 Strava").font(.caption2).foregroundColor(.secondary)
                     }
@@ -466,6 +531,7 @@ struct SettingsView: View {
                             autoSaveSyncSetting(["sync_to_strava": newVal])
                         }
                     )).labelsHidden().tint(.orange)
+                    .disabled(!auth.isPro)
                 }
                 
                 if syncToStrava {
