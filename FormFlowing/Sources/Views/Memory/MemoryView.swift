@@ -109,7 +109,13 @@ struct MemoryView: View {
     }
     
     private func loadMemories() async {
-        loading = true
+        if let cached = await APIService.shared.cached("/memory", as: MemoryListResponse.self) {
+            await MainActor.run {
+                memories = cached.memories
+                loading = false
+            }
+        }
+        
         do {
             let res = try await APIService.shared.getMemories()
             await MainActor.run {
@@ -117,7 +123,9 @@ struct MemoryView: View {
                 loading = false
             }
         } catch {
-            await MainActor.run { loading = false }
+            await MainActor.run { 
+                if memories.isEmpty { loading = false }
+            }
         }
     }
     

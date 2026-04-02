@@ -665,7 +665,10 @@ struct HomeView: View {
     }
     
     private func loadData() async {
-        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
+        // 1. 先从本地缓存加载，立即显示
+        await loadFromCache()
+        
+        // 2. 后台从 API 获取最新数据
         async let statusFetch: Void = {
             if let res = try? await APIService.shared.getGarminStatus() {
                 await MainActor.run {
@@ -674,7 +677,9 @@ struct HomeView: View {
                     withAnimation { appear = true }
                 }
             } else {
-                await MainActor.run { loading = false }
+                await MainActor.run {
+                    if garminStatus == nil { loading = false }
+                }
             }
         }()
         
@@ -686,6 +691,20 @@ struct HomeView: View {
         }()
         
         _ = await (statusFetch, activitiesFetch)
+    }
+    
+    private func loadFromCache() async {
+        if let cached = await APIService.shared.cached("/profile/garmin-status", as: GarminStatusResponse.self) {
+            await MainActor.run {
+                garminStatus = cached.status
+                loading = false
+                withAnimation { appear = true }
+            }
+        }
+        if let cached = await APIService.shared.cached("/activity/list?page=1&page_size=10", as: [ActivityListItem].self) {
+            let filtered = cached.filter { $0.analysisSummary != nil }.prefix(3).map { $0 }
+            await MainActor.run { recentActivities = filtered }
+        }
     }
     
     private func formatDate(_ date: Date) -> String {

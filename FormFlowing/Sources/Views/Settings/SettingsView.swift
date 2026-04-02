@@ -618,7 +618,10 @@ struct SettingsView: View {
     // MARK: - Data
     
     private func loadData() async {
-        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
+        // 1. 先从本地缓存加载，立即显示
+        await loadFromCache()
+        
+        // 2. 后台请求，拿到最新数据后自动写入缓存并刷新 UI
         async let profileFetch: Void = {
             if let profileRes = try? await APIService.shared.getProfile(),
                let p = profileRes.profile {
@@ -660,6 +663,36 @@ struct SettingsView: View {
         }()
         
         _ = await (profileFetch, accountFetch, goalFetch, statusFetch)
+    }
+    
+    private func loadFromCache() async {
+        if let cached = await APIService.shared.cached("/profile", as: ProfileResponse.self), let p = cached.profile {
+            await MainActor.run { profile = p }
+        }
+        if let cached = await APIService.shared.cached("/account", as: AccountInfo.self) {
+            await MainActor.run {
+                account = cached
+                cnUsername = cached.cnUsername ?? ""
+                globalUsername = cached.globalUsername ?? ""
+                syncFrequency = Double(cached.syncFrequency ?? 180)
+                syncCnGlobal = cached.syncCnGlobal ?? true
+                syncToStrava = cached.syncToStrava ?? false
+                stravaConnected = cached.stravaConnected ?? false
+                igpsConfigured = cached.igpsportConfigured ?? false
+                igpsUsername = cached.igpsportUsername ?? ""
+                intervalsConfigured = cached.intervalsConfigured ?? false
+                intervalsUserId = cached.intervalsUserId ?? ""
+            }
+        }
+        if let cached = await APIService.shared.cached("/training-goal", as: TrainingGoalResponse.self) {
+            await MainActor.run {
+                trainingGoalContent = cached.content ?? ""
+                trainingGoalUpdatedAt = cached.updatedAt
+            }
+        }
+        if let cached = await APIService.shared.cached("/account/status", as: AccountStatusResponse.self) {
+            await MainActor.run { platformStatuses = cached.platforms }
+        }
     }
     
     private func loadPlatformStatus() {

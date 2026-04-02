@@ -12,6 +12,8 @@ struct ActivitiesView: View {
     @State private var activities: [ActivityListItem] = []
     @State private var loading = true
     @State private var page = 1
+    @State private var hasMore = true
+    @State private var loadingMore = false
     @State private var appear = false
     @State private var scrollOffset: CGFloat = 0
     @State private var showUploadSheet = false
@@ -56,12 +58,26 @@ struct ActivitiesView: View {
                                 .offset(y: appear ? 0 : 20)
                                 .animation(.easeOut(duration: 0.4).delay(Double(min(idx, 8)) * 0.05), value: appear)
                             }
+                            
+                            // 滑动到底部加载更多
+                            if hasMore {
+                                ProgressView()
+                                    .padding()
+                                    .onAppear {
+                                        if !loadingMore && !loading {
+                                            page += 1
+                                            Task { await loadActivities(isLoadMore: true) }
+                                        }
+                                    }
+                            } else if !activities.isEmpty {
+                                Text("没有更多了")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding()
+                            }
                         }
                         .padding(.horizontal)
                         .padding(.vertical)
-                        
-                        // 分页
-                        paginationBar
                     }
                 }
                 .background(
@@ -83,8 +99,7 @@ struct ActivitiesView: View {
             .background(Color(UIColor.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
-                page = 1
-                await loadActivities()
+                await loadActivities(isLoadMore: false)
             }
             .task {
                 await loadActivities()
@@ -119,52 +134,40 @@ struct ActivitiesView: View {
         .background(Color(UIColor.systemBackground))
     }
     
-    // MARK: - Pagination
-    
-    var paginationBar: some View {
-        HStack(spacing: 12) {
-            Button(action: {
-                page = max(1, page - 1)
-                Task { await loadActivities() }
-            }) {
-                Image(systemName: "chevron.left")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 32, height: 32)
-                    .background(Color.white).cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 1))
+    private func loadActivities(isLoadMore: Bool = false) async {
+        if !isLoadMore {
+            page = 1
+            hasMore = true
+            if let cached = await APIService.shared.cached("/activity/list?page=1&page_size=20", as: [ActivityListItem].self) {
+                await MainActor.run {
+                    activities = cached
+                    loading = false
+                }
             }
-            .disabled(page <= 1)
-            .opacity(page <= 1 ? 0.4 : 1)
-            
-            Text("第 \(page) 页")
-                .font(.system(size: 13, weight: .medium))
-            
-            Button(action: {
-                page += 1
-                Task { await loadActivities() }
-            }) {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 32, height: 32)
-                    .background(Color.white).cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 1))
-            }
-            .disabled(activities.count < 20)
-            .opacity(activities.count < 20 ? 0.4 : 1)
+        } else {
+            await MainActor.run { loadingMore = true }
         }
-        .padding(.vertical)
-    }
-    
-    private func loadActivities() async {
-        loading = true
+        
         do {
             let items = try await APIService.shared.getActivities(page: page)
             await MainActor.run {
-                activities = items
-                loading = false
+                if isLoadMore {
+                    activities.append(contentsOf: items)
+                    loadingMore = false
+                } else {
+                    activities = items
+                    loading = false
+                }
+                hasMore = items.count >= 20
             }
         } catch {
-            await MainActor.run { loading = false }
+            await MainActor.run { 
+                if isLoadMore {
+                    loadingMore = false
+                } else if activities.isEmpty {
+                    loading = false
+                }
+            }
         }
     }
     

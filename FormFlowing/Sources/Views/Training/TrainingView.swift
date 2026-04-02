@@ -19,17 +19,37 @@ private let trainingGoals: [(key: String, icon: String, label: String, desc: Str
     ("general_fitness", "🎯", "综合提升", "均衡发展各项能力"),
 ]
 
-private let tssPresets: [(key: String, label: String, tss: String, desc: String)] = [
-    ("light", "轻量", "200-300", "入门/恢复期"),
-    ("moderate", "中等", "300-450", "稳步提升"),
-    ("heavy", "高量", "450-600", "进阶冲刺"),
-    ("race", "赛季", "600+", "赛前备战"),
+private let sportOptions: [(key: String, icon: String, label: String)] = [
+    ("cycling", "🚴", "骑行"),
+    ("running", "🏃", "跑步"),
+    ("swimming", "🏊", "游泳"),
+    ("strength", "🏋️", "力量"),
+]
+
+private let tssPresets: [(key: String, label: String, tss: String, desc: String, hours: String)] = [
+    ("light", "轻量", "200-300", "入门/恢复期", "4-6h"),
+    ("moderate", "中等", "300-450", "稳步提升", "6-8h"),
+    ("heavy", "高量", "450-600", "进阶冲刺", "8-12h"),
+    ("race", "赛季", "600+", "赛前备战", "12h+"),
 ]
 
 private let weekdayKeys: [(key: Int, label: String, full: String)] = [
     (1, "一", "周一"), (2, "二", "周二"), (3, "三", "周三"),
     (4, "四", "周四"), (5, "五", "周五"), (6, "六", "周六"), (7, "日", "周日"),
 ]
+
+struct GeneratePlanForm {
+    var goal = "ftp_improvement"
+    var sports: Set<String> = ["cycling"]
+    var multiSportDay = false
+    var trainDays: Set<Int> = [2, 3, 4, 5, 6, 7]
+    var lsdDays: Set<Int> = [7]
+    var tssLevel = "moderate"
+    var weeks = 4.0
+    var startDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+    var goalDetail: [String: String] = [:]
+    var extraRequirements = ""
+}
 
 // MARK: - Main View
 
@@ -44,6 +64,7 @@ struct TrainingView: View {
     @State private var selectedDate: String?
     @State private var showDeleteAlert = false
     @State private var planToDelete: TrainingPlan?
+    @State private var planToRegenerate: TrainingPlan?
     @State private var showPlanDetailsSheet = false
     @State private var showCalendarSheet = false
     @State private var showPlanRegenerateSheet = false
@@ -62,11 +83,7 @@ struct TrainingView: View {
     
     // AI 生成
     @State private var showGenSheet = false
-    @State private var genGoal = "ftp_improvement"
-    @State private var genSports: Set<String> = ["cycling"]
-    @State private var genTrainDays: Set<Int> = [2, 3, 4, 5, 6, 7]
-    @State private var genTssLevel = "moderate"
-    @State private var genWeeks = 4.0
+    @State private var genForm = GeneratePlanForm()
     @State private var generating = false
     @State private var pollingTask: Task<Void, Never>?
     @State private var scrollOffset: CGFloat = 0
@@ -88,9 +105,28 @@ struct TrainingView: View {
         guard let dateStr = selectedDate, let date = dateFromString(dateStr) else {
             return monthTitle
         }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: date)
+
+        let today = calendar.startOfDay(for: Date())
+        let target = calendar.startOfDay(for: date)
+        let dayOffset = calendar.dateComponents([.day], from: today, to: target).day ?? 0
+
+        let shortFormatter = DateFormatter()
+        shortFormatter.locale = Locale(identifier: "zh_CN")
+        shortFormatter.dateFormat = "M月d日"
+
+        switch dayOffset {
+        case -1:
+            return "昨天 · \(shortFormatter.string(from: date))"
+        case 0:
+            return "今天 · \(shortFormatter.string(from: date))"
+        case 1:
+            return "明天 · \(shortFormatter.string(from: date))"
+        default:
+            let fullFormatter = DateFormatter()
+            fullFormatter.locale = Locale(identifier: "zh_CN")
+            fullFormatter.dateFormat = "yyyy年M月d日"
+            return fullFormatter.string(from: date)
+        }
     }
     
     var shortDateTitle: String {
@@ -281,14 +317,12 @@ struct TrainingView: View {
             }
             .sheet(isPresented: $showGenSheet) {
                 GeneratePlanSheet(
-                    genGoal: $genGoal,
-                    genSports: $genSports,
-                    genTrainDays: $genTrainDays,
-                    genTssLevel: $genTssLevel,
-                    genWeeks: $genWeeks,
+                    initialForm: genForm,
                     generating: $generating,
                     onGenerate: generatePlan
                 )
+                .presentationDetents([.fraction(0.8), .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showCalendarSheet) {
                 NavigationView {
@@ -336,7 +370,8 @@ struct TrainingView: View {
                         }
                     }
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPlanDetailsSheet) {
                 NavigationView {
@@ -423,7 +458,7 @@ struct TrainingView: View {
                                     }
                                     
                                     Button(action: {
-                                        showPlanRegenerateSheet = true
+                                        planToRegenerate = plan
                                     }) {
                                         HStack {
                                             Image(systemName: "sparkles")
@@ -458,6 +493,7 @@ struct TrainingView: View {
                             }
                         }
                         .padding(20)
+                        .padding(.bottom, 28)
                     }
                     .navigationTitle("计划详情")
                     .navigationBarTitleDisplayMode(.inline)
@@ -466,19 +502,34 @@ struct TrainingView: View {
                             Button("关闭") { showPlanDetailsSheet = false }
                         }
                     }
+                    .alert("重新生成计划", isPresented: Binding(
+                        get: { planToRegenerate != nil },
+                        set: { if !$0 { planToRegenerate = nil } }
+                    )) {
+                        Button("继续", role: .destructive) {
+                            planToRegenerate = nil
+                            DispatchQueue.main.async {
+                                showPlanRegenerateSheet = true
+                            }
+                        }
+                        Button("取消", role: .cancel) {
+                            planToRegenerate = nil
+                        }
+                    } message: {
+                        Text("当前训练计划「\(planToRegenerate?.planName ?? "")」尚未结束。\n\n重新生成将删除该计划及其所有课程，包括已推送到 Garmin 的训练。确定要继续吗？")
+                    }
                     .sheet(isPresented: $showPlanRegenerateSheet) {
                         GeneratePlanSheet(
-                            genGoal: $genGoal,
-                            genSports: $genSports,
-                            genTrainDays: $genTrainDays,
-                            genTssLevel: $genTssLevel,
-                            genWeeks: $genWeeks,
+                            initialForm: genForm,
                             generating: $generating,
                             onGenerate: generatePlan
                         )
+                        .presentationDetents([.fraction(0.8), .large])
+                        .presentationDragIndicator(.visible)
                     }
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.72), .large])
+                .presentationDragIndicator(.visible)
             }
             .alert("删除训练计划", isPresented: $showDeleteAlert) {
                 Button("删除", role: .destructive) {
@@ -838,6 +889,10 @@ struct TrainingView: View {
     // MARK: - Data
     
     private func loadData() async {
+        // 1. 先从本地缓存加载，立即显示
+        await loadFromCache()
+        
+        // 2. 后台请求更新
         loading = true
         do {
             async let statusReq = try? APIService.shared.getPlanStatus()
@@ -917,6 +972,55 @@ struct TrainingView: View {
         }
     }
     
+    private func loadFromCache() async {
+        // 加载 plans
+        guard let plansRes = await APIService.shared.cached("/training/plan", as: TrainingPlanListResponse.self) else { return }
+        let fetchedPlans = plansRes.plans
+        
+        await MainActor.run {
+            self.plans = fetchedPlans
+            if let current = self.selectedPlan,
+               !fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
+                self.selectedPlan = nil
+            }
+        }
+        
+        if !fetchedPlans.isEmpty {
+            var allWorkouts: [Workout] = []
+            var groupedWorkouts: [Int: [Workout]] = [:]
+            var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
+            
+            for plan in fetchedPlans {
+                if let detail = await APIService.shared.cached("/training/plan/\(plan.trainingPlanId)", as: TrainingPlanDetailResponse.self) {
+                    allWorkouts.append(contentsOf: detail.workouts)
+                    groupedWorkouts[plan.trainingPlanId] = detail.workouts
+                    for workout in detail.workouts {
+                        planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
+                            title: plan.planName,
+                            intro: plan.description
+                        )
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                self.workouts = allWorkouts
+                self.workoutsByPlan = groupedWorkouts
+                self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
+                if let firstPlan = fetchedPlans.first,
+                   let startDate = firstPlan.startDate,
+                   let date = dateFromString(startDate) {
+                    self.currentMonth = date
+                }
+                self.loading = false
+            }
+        } else {
+            await MainActor.run {
+                self.loading = false
+            }
+        }
+    }
+    
     private func dateFromString(_ s: String) -> Date? {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         return f.date(from: s)
@@ -960,24 +1064,27 @@ struct TrainingView: View {
         }
     }
     
-    private func generatePlan() {
+    private func generatePlan(_ form: GeneratePlanForm) {
         generating = true
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        genForm = form
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        let startDate = f.string(from: form.startDate)
         
-        let goal: [String: Any] = [
-            "goal_type": genGoal,
-            "sports": Array(genSports),
-            "train_days": Array(genTrainDays),
-            "tss_level": genTssLevel,
-            "weeks": Int(genWeeks),
-            "start_date": f.string(from: tomorrow),
+        var goal: [String: Any] = [
+            "goal_type": form.goal,
+            "sports": Array(form.sports),
         ]
+        goal.merge(buildTrainingGoalDetails(from: form)) { _, new in new }
         
-        let req: [String: Any] = [
-            "duration_weeks": Int(genWeeks),
-            "start_date": f.string(from: tomorrow)
+        var req: [String: Any] = [
+            "duration_weeks": Int(form.weeks),
+            "start_date": startDate
         ]
+        req["extra_requirements"] = buildExtraRequirements(from: form)
         
         let oldPlanId = selectedPlan?.trainingPlanId
         
@@ -996,12 +1103,115 @@ struct TrainingView: View {
             do {
                 try await APIService.shared.saveTrainingGoal(goal: goal)
                 try await APIService.shared.generateTrainingPlan(req: req)
-                await MainActor.run { showGenSheet = false }
+                await MainActor.run {
+                    showGenSheet = false
+                    showPlanRegenerateSheet = false
+                }
                 startPolling(oldPlanId: oldPlanId)
             } catch {
                 await MainActor.run { generating = false }
             }
         }
+    }
+
+    private func buildTrainingGoalDetails(from form: GeneratePlanForm) -> [String: Any] {
+        let gd = form.goalDetail
+        var req: [String: Any] = [:]
+
+        func intValue(_ key: String) -> Int? {
+            guard let raw = gd[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty,
+                  let value = Int(raw) else { return nil }
+            return value
+        }
+
+        func stringValue(_ key: String) -> String? {
+            guard let raw = gd[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else { return nil }
+            return raw
+        }
+
+        if form.goal == "ftp_improvement" || form.goal == "general_fitness" {
+            if let value = intValue("currentFtp") { req["current_ftp"] = value }
+            if let value = intValue("targetFtp") { req["target_ftp"] = value }
+            if let value = stringValue("focusArea") { req["focus_area"] = value }
+        } else if form.goal == "aerobic_endurance" {
+            if let value = intValue("targetZ2Duration") { req["target_z2_duration"] = value }
+            if let value = stringValue("targetWeeklyHours") { req["target_weekly_hours"] = value }
+        } else if form.goal == "vo2max_development" {
+            if let value = intValue("currentVo2") { req["current_vo2"] = value }
+            if let value = intValue("targetVo2") { req["target_vo2"] = value }
+        } else if form.goal == "sprint_power" {
+            if let value = intValue("targetSprintPower") { req["target_sprint_power"] = value }
+            if let value = intValue("sprintDuration") { req["sprint_duration"] = value }
+        } else if form.goal == "triathlon" {
+            if let value = stringValue("targetFinishTime") { req["target_finish_time"] = value }
+            if let value = stringValue("raceDistance") { req["race_distance"] = value }
+        }
+
+        return req
+    }
+
+    private func buildExtraRequirements(from form: GeneratePlanForm) -> String {
+        let selectedSports = sportOptions
+            .filter { form.sports.contains($0.key) }
+            .map(\.label)
+            .joined(separator: "、")
+        let trainingDays = weekdayKeys
+            .filter { form.trainDays.contains($0.key) }
+            .map(\.full)
+            .joined(separator: "、")
+        let lsdDays = weekdayKeys
+            .filter { form.lsdDays.contains($0.key) && form.trainDays.contains($0.key) }
+            .map(\.full)
+            .joined(separator: "、")
+        let restDays = weekdayKeys
+            .filter { !form.trainDays.contains($0.key) }
+            .map(\.full)
+            .joined(separator: "、")
+        let goalLabel = trainingGoals.first(where: { $0.key == form.goal })?.label ?? form.goal
+        let tssPreset = tssPresets.first(where: { $0.key == form.tssLevel })
+        let extra = form.extraRequirements.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var lines = [
+            "## 运动项目",
+            selectedSports.isEmpty ? "未设置" : selectedSports
+        ]
+
+        if form.sports.count > 1 {
+            if form.multiSportDay {
+                lines.append("- 同一天可以安排多种运动项目的训练")
+                lines.append("- 每种运动都作为独立的训练课程安排在同一天")
+            } else {
+                lines.append("- 每天只安排一项运动，多个项目在不同日期轮流交替")
+                lines.append("- 合理分配各项目的训练天数")
+            }
+        }
+
+        lines.append("")
+        lines.append("## 每周训练安排")
+        lines.append("- 训练目标：\(goalLabel)")
+        lines.append("- 可训练日：\(trainingDays.isEmpty ? "未设置" : trainingDays)（共 \(form.trainDays.count) 天）")
+        lines.append("- 休息日：\(restDays.isEmpty ? "无" : restDays)")
+
+        if form.sports.contains("cycling") {
+            lines.append("- 长距离骑行日（LSD）：\(lsdDays.isEmpty ? "无" : lsdDays)，LSD 日可安排 2-4 小时长骑")
+        }
+
+        lines.append("- 非 LSD 日单次训练时长控制在 60-90 分钟")
+        lines.append("")
+        lines.append("## 训练负荷")
+        lines.append("- 目标周 TSS：\(tssPreset?.tss ?? form.tssLevel)")
+        lines.append("- 预计每周训练时长：\(tssPreset?.hours ?? "--")")
+        lines.append("- 计划周期：\(Int(form.weeks)) 周")
+
+        if !extra.isEmpty {
+            lines.append("")
+            lines.append("## 其他要求")
+            lines.append(extra)
+        }
+
+        return lines.joined(separator: "\n")
     }
     
     private func startPolling(oldPlanId: Int?) {
@@ -1369,15 +1579,22 @@ struct StepCardView: View {
 // MARK: - Generate Plan Sheet
 
 struct GeneratePlanSheet: View {
-    @Binding var genGoal: String
-    @Binding var genSports: Set<String>
-    @Binding var genTrainDays: Set<Int>
-    @Binding var genTssLevel: String
-    @Binding var genWeeks: Double
     @Binding var generating: Bool
-    let onGenerate: () -> Void
+    let onGenerate: (GeneratePlanForm) -> Void
     
     @Environment(\.dismiss) private var dismiss
+    @State private var form: GeneratePlanForm
+    @FocusState private var focusedField: String?
+
+    init(
+        initialForm: GeneratePlanForm,
+        generating: Binding<Bool>,
+        onGenerate: @escaping (GeneratePlanForm) -> Void
+    ) {
+        self._generating = generating
+        self.onGenerate = onGenerate
+        self._form = State(initialValue: initialForm)
+    }
     
     var body: some View {
         NavigationStack {
@@ -1387,25 +1604,44 @@ struct GeneratePlanSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("运动类型").font(.headline)
                         HStack(spacing: 10) {
-                            ForEach([("cycling", "🚴", "骑行"), ("running", "🏃", "跑步"), ("swimming", "🏊", "游泳"), ("strength", "🏋️", "力量")], id: \.0) { key, icon, label in
+                            ForEach(sportOptions, id: \.key) { option in
                                 Button(action: {
-                                    if genSports.contains(key) {
-                                        if genSports.count > 1 { genSports.remove(key) }
-                                    } else { genSports.insert(key) }
+                                    if form.sports.contains(option.key) {
+                                        if form.sports.count > 1 { form.sports.remove(option.key) }
+                                    } else { form.sports.insert(option.key) }
+                                    if !form.sports.contains("cycling") {
+                                        form.lsdDays = []
+                                    } else if form.lsdDays.isEmpty, let fallback = form.trainDays.max() {
+                                        form.lsdDays = [fallback]
+                                    }
+                                    if form.sports.count <= 1 {
+                                        form.multiSportDay = false
+                                    }
                                 }) {
                                     VStack(spacing: 4) {
-                                        Text(icon).font(.title2)
-                                        Text(label).font(.caption.weight(.medium))
+                                        Text(option.icon).font(.title2)
+                                        Text(option.label).font(.caption.weight(.medium))
                                     }
                                     .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                    .background(genSports.contains(key) ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
+                                    .background(form.sports.contains(option.key) ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
                                     .cornerRadius(12)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(genSports.contains(key) ? Color.teal : Color.clear, lineWidth: 2)
+                                            .stroke(form.sports.contains(option.key) ? Color.teal : Color.clear, lineWidth: 2)
                                     )
                                 }
                                 .foregroundColor(.primary)
+                            }
+                        }
+
+                        if form.sports.count > 1 {
+                            Toggle("同一天可安排多种运动的训练课程", isOn: $form.multiSportDay)
+                                .font(.subheadline)
+                                .tint(.teal)
+                            if !form.multiSportDay {
+                                Text("未开启时，每天只安排一项运动，多项目轮流交替")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
@@ -1415,7 +1651,12 @@ struct GeneratePlanSheet: View {
                         Text("训练目标").font(.headline)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                             ForEach(trainingGoals, id: \.key) { goal in
-                                Button(action: { genGoal = goal.key }) {
+                                Button(action: {
+                                    form.goal = goal.key
+                                    if goal.key == "triathlon" {
+                                        form.sports = ["cycling", "running", "swimming"]
+                                    }
+                                }) {
                                     HStack(spacing: 6) {
                                         Text(goal.icon)
                                         VStack(alignment: .leading, spacing: 1) {
@@ -1425,17 +1666,19 @@ struct GeneratePlanSheet: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(10)
-                                    .background(genGoal == goal.key ? Color.purple.opacity(0.12) : Color(UIColor.systemGray6))
+                                    .background(form.goal == goal.key ? Color.purple.opacity(0.12) : Color(UIColor.systemGray6))
                                     .cornerRadius(10)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .stroke(genGoal == goal.key ? Color.purple : Color.clear, lineWidth: 2)
+                                            .stroke(form.goal == goal.key ? Color.purple : Color.clear, lineWidth: 2)
                                     )
                                 }
                                 .foregroundColor(.primary)
                             }
                         }
                     }
+
+                    goalDetailSection
                     
                     // 训练日
                     VStack(alignment: .leading, spacing: 8) {
@@ -1443,19 +1686,64 @@ struct GeneratePlanSheet: View {
                         HStack(spacing: 6) {
                             ForEach(weekdayKeys, id: \.key) { wk in
                                 Button(action: {
-                                    if genTrainDays.contains(wk.key) {
-                                        if genTrainDays.count > 1 { genTrainDays.remove(wk.key) }
-                                    } else { genTrainDays.insert(wk.key) }
+                                    if form.trainDays.contains(wk.key) {
+                                        if form.trainDays.count > 1 { form.trainDays.remove(wk.key) }
+                                    } else { form.trainDays.insert(wk.key) }
+                                    form.lsdDays = form.lsdDays.intersection(form.trainDays)
+                                    if form.lsdDays.isEmpty, form.sports.contains("cycling"), let fallback = form.trainDays.max() {
+                                        form.lsdDays = [fallback]
+                                    }
                                 }) {
                                     Text(wk.label)
                                         .font(.system(size: 13, weight: .medium))
                                         .frame(width: 36, height: 36)
-                                        .background(genTrainDays.contains(wk.key) ? Color.teal : Color(UIColor.systemGray5))
-                                        .foregroundColor(genTrainDays.contains(wk.key) ? .white : .primary)
+                                        .background(form.trainDays.contains(wk.key) ? Color.teal : Color(UIColor.systemGray5))
+                                        .foregroundColor(form.trainDays.contains(wk.key) ? .white : .primary)
                                         .clipShape(Circle())
                                 }
                             }
                         }
+                    }
+
+                    if form.sports.contains("cycling") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("长距离骑行日（LSD）").font(.headline)
+                            HStack(spacing: 6) {
+                                ForEach(weekdayKeys.filter { form.trainDays.contains($0.key) }, id: \.key) { wk in
+                                    Button(action: {
+                                        if form.lsdDays.contains(wk.key) {
+                                            form.lsdDays.remove(wk.key)
+                                        } else {
+                                            form.lsdDays.insert(wk.key)
+                                        }
+                                    }) {
+                                        Text(wk.label)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .frame(width: 36, height: 36)
+                                            .background(form.lsdDays.contains(wk.key) ? Color.orange : Color(UIColor.systemGray5))
+                                            .foregroundColor(form.lsdDays.contains(wk.key) ? .white : .primary)
+                                            .clipShape(Circle())
+                                    }
+                                }
+                            }
+                            Text("LSD 日可安排 2-4 小时长骑")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("起始日期").font(.headline)
+                        DatePicker(
+                            "起始日期",
+                            selection: $form.startDate,
+                            in: Date()...,
+                            displayedComponents: .date
+                        )
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                        .environment(\.locale, Locale(identifier: "zh_CN"))
+                        .environment(\.calendar, Calendar(identifier: .gregorian))
                     }
                     
                     // TSS 预设
@@ -1463,37 +1751,65 @@ struct GeneratePlanSheet: View {
                         Text("周训练量").font(.headline)
                         HStack(spacing: 8) {
                             ForEach(tssPresets, id: \.key) { preset in
-                                Button(action: { genTssLevel = preset.key }) {
+                                Button(action: { form.tssLevel = preset.key }) {
                                     VStack(spacing: 2) {
                                         Text(preset.label).font(.caption.weight(.semibold))
                                         Text(preset.tss).font(.system(size: 9, weight: .bold)).foregroundColor(.teal)
+                                        Text(preset.hours).font(.system(size: 8)).foregroundColor(.secondary)
                                         Text(preset.desc).font(.system(size: 8)).foregroundColor(.secondary)
                                     }
                                     .frame(maxWidth: .infinity).padding(.vertical, 8)
-                                    .background(genTssLevel == preset.key ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
+                                    .background(form.tssLevel == preset.key ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
                                     .cornerRadius(10)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .stroke(genTssLevel == preset.key ? Color.teal : Color.clear, lineWidth: 2)
+                                            .stroke(form.tssLevel == preset.key ? Color.teal : Color.clear, lineWidth: 2)
                                     )
                                 }
                                 .foregroundColor(.primary)
                             }
                         }
                     }
-                    
+
                     // 周数
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("计划周数").font(.headline)
                             Spacer()
-                            Text("\(Int(genWeeks)) 周").font(.subheadline.weight(.bold)).foregroundColor(.teal)
+                            Text("\(Int(form.weeks)) 周").font(.subheadline.weight(.bold)).foregroundColor(.teal)
                         }
-                        Slider(value: $genWeeks, in: 1...12, step: 1).tint(.teal)
+                        Slider(value: $form.weeks, in: 1...12, step: 1).tint(.teal)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("其他要求").font(.headline)
+                        TextEditor(text: $form.extraRequirements)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 96)
+                            .padding(10)
+                            .background(Color(UIColor.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color(UIColor.systemGray5), lineWidth: 1)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if form.extraRequirements.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("例如：本周有比赛需要减量、最近膝盖不适避免爬坡...")
+                                        .font(.subheadline)
+                                        .foregroundColor(Color(UIColor.placeholderText))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 18)
+                                        .allowsHitTesting(false)
+                                }
+                            }
                     }
                     
                     // 生成按钮
-                    Button(action: onGenerate) {
+                    Button(action: {
+                        focusedField = nil
+                        onGenerate(form)
+                    }) {
                         HStack {
                             if generating {
                                 ProgressView().tint(.white)
@@ -1513,6 +1829,7 @@ struct GeneratePlanSheet: View {
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("AI 生成训练计划")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1521,5 +1838,102 @@ struct GeneratePlanSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var goalDetailSection: some View {
+        switch form.goal {
+        case "ftp_improvement":
+            detailCard(title: "FTP 目标设定", icon: "⚡", footnote: "专业建议：3 周计划 FTP 提升 3-5% 为合理目标") {
+                HStack(spacing: 12) {
+                    detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
+                    detailField(title: "目标 FTP (W)", key: "targetFtp", keyboard: .numberPad)
+                }
+            }
+        case "aerobic_endurance":
+            detailCard(title: "有氧耐力目标", icon: "💚", footnote: "专业建议：逐步将 Z2 时长从 60 分钟递增到目标值") {
+                HStack(spacing: 12) {
+                    detailField(title: "目标单次 Z2 时长", key: "targetZ2Duration", placeholder: "如 120", keyboard: .numberPad)
+                    detailField(title: "目标周训练量 (小时)", key: "targetWeeklyHours", placeholder: "如 8", keyboard: .numbersAndPunctuation)
+                }
+            }
+        case "vo2max_development":
+            detailCard(title: "VO₂max 目标", icon: "🔴", footnote: "专业建议：高强度间歇是提升 VO₂max 的有效手段") {
+                HStack(spacing: 12) {
+                    detailField(title: "当前 VO₂max", key: "currentVo2", placeholder: "如 45", keyboard: .numberPad)
+                    detailField(title: "目标 VO₂max", key: "targetVo2", placeholder: "如 50", keyboard: .numberPad)
+                }
+            }
+        case "sprint_power":
+            detailCard(title: "冲刺能力目标", icon: "💥", footnote: "专业建议：以 5-30 秒全力冲刺为核心，配合充足恢复") {
+                HStack(spacing: 12) {
+                    detailField(title: "目标冲刺功率 (W)", key: "targetSprintPower", placeholder: "如 800", keyboard: .numberPad)
+                    detailField(title: "冲刺持续时间 (秒)", key: "sprintDuration", placeholder: "如 15", keyboard: .numberPad)
+                }
+            }
+        case "triathlon":
+            detailCard(title: "铁三目标", icon: "🏆", footnote: nil) {
+                VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("参赛距离").font(.caption).foregroundColor(.secondary)
+                        Picker("参赛距离", selection: detailBinding("raceDistance")) {
+                            Text("请选择").tag("")
+                            Text("冲刺赛（S）").tag("sprint")
+                            Text("标准赛（O）").tag("olympic")
+                            Text("半程（70.3）").tag("half")
+                            Text("全程（140.6）").tag("full")
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    detailField(title: "目标完赛时间", key: "targetFinishTime", placeholder: "如 3小时30分", keyboard: .default)
+                }
+            }
+        case "general_fitness":
+            detailCard(title: "综合提升", icon: "🎯", footnote: nil) {
+                HStack(spacing: 12) {
+                    detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
+                    detailField(title: "重点方向", key: "focusArea", placeholder: "如 爬坡、耐力", keyboard: .default)
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func detailBinding(_ key: String) -> Binding<String> {
+        Binding(
+            get: { form.goalDetail[key] ?? "" },
+            set: { form.goalDetail[key] = $0 }
+        )
+    }
+
+    private func detailField(title: String, key: String, placeholder: String? = nil, keyboard: UIKeyboardType) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            TextField(placeholder ?? title, text: detailBinding(key))
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(keyboard)
+                .focused($focusedField, equals: key)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detailCard<Content: View>(title: String, icon: String, footnote: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(icon) \(title)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.secondary)
+            content()
+            if let footnote {
+                Text(footnote)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(UIColor.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

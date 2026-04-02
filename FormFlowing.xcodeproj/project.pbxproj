@@ -16,6 +16,7 @@
 		5A2715F53F2358A42218CB0B /* GarminLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A6F83DBDEABFC47D494F8D4 /* GarminLocalization.swift */; };
 		5E589485A6A36B441853F307 /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C0C54459BB0A273CF8A037 /* TrainingView.swift */; };
 		8A31FED933F67F9A2A9ACDF7 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA582F4EFB4086DA5F50C141 /* APIService.swift */; };
+		CACH00020000000000000000 /* CacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACH00010000000000000000 /* CacheService.swift */; };
 		8BC5264A0AEDB5F2942FEF49 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1284971F48863E4C1CDDA4 /* AuthManager.swift */; };
 		BBD75F5155116BD4E9CEE01D /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC87358F2FE20B8ADBA406CF /* HomeView.swift */; };
 		BDF05C45C34C76B81BB26C52 /* ActivitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9C57982965E1564AE86877 /* ActivitiesView.swift */; };
@@ -32,13 +33,14 @@
 		13C0C54459BB0A273CF8A037 /* TrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingView.swift; sourceTree = "<group>"; };
 		152DDE81B2D0426FC1633D0F /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
 		1DE1915FB47FC07A4A6C2CB0 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		66EB883FEDADD1FDEE120C01 /* FormFlowing.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FormFlowing.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		66EB883FEDADD1FDEE120C01 /* FormFlowing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FormFlowing.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E073ABC0343DAB02AB97464 /* FormFlowingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormFlowingApp.swift; sourceTree = "<group>"; };
 		73F6596FC4C26B3B87E4327C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8D9C57982965E1564AE86877 /* ActivitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesView.swift; sourceTree = "<group>"; };
 		9A6F83DBDEABFC47D494F8D4 /* GarminLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminLocalization.swift; sourceTree = "<group>"; };
 		9DB6539D79B13B27249F72F4 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		BA582F4EFB4086DA5F50C141 /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
+		CACH00010000000000000000 /* CacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheService.swift; sourceTree = "<group>"; };
 		CDEB4145A6705933066488CC /* UploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadView.swift; sourceTree = "<group>"; };
 		D5112AA91BB56AB5E9E8065F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		DC87358F2FE20B8ADBA406CF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				BA582F4EFB4086DA5F50C141 /* APIService.swift */,
+				CACH00010000000000000000 /* CacheService.swift */,
 				0E1284971F48863E4C1CDDA4 /* AuthManager.swift */,
 			);
 			path = Services;
@@ -226,8 +229,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2640;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = C27FE1A98F2138DF5D63771A /* Build configuration list for PBXProject "FormFlowing" */;
 			developmentRegion = en;
@@ -265,6 +266,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8A31FED933F67F9A2A9ACDF7 /* APIService.swift in Sources */,
+				CACH00020000000000000000 /* CacheService.swift in Sources */,
 				BDF05C45C34C76B81BB26C52 /* ActivitiesView.swift in Sources */,
 				36EF46757C8BC337EBF18028 /* ActivityDetailView.swift in Sources */,
 				8BC5264A0AEDB5F2942FEF49 /* AuthManager.swift in Sources */,
@@ -349,6 +351,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = K2UVHB9M82;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowArbitraryLoads = YES;
@@ -439,6 +442,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = K2UVHB9M82;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowArbitraryLoads = YES;

@@ -34,6 +34,7 @@ struct MainTabView: View {
     @EnvironmentObject var auth: AuthManager
     @State private var selectedTab = 0
     @State private var tabBarVisible = true
+    @State private var loadedTabs: Set<Int> = [0]
     
     private let teal = Color(red: 0.051, green: 0.580, blue: 0.533)
     
@@ -47,13 +48,14 @@ struct MainTabView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // 内容区域
-            Group {
-                switch selectedTab {
-                case 0: HomeView()
-                case 1: ActivitiesView()
-                case 2: TrainingView()
-                case 3: SettingsView()
-                default: HomeView()
+            ZStack {
+                ForEach(0..<tabs.count, id: \.self) { idx in
+                    if loadedTabs.contains(idx) {
+                        tabContent(for: idx)
+                            .opacity(selectedTab == idx ? 1 : 0)
+                            .allowsHitTesting(selectedTab == idx)
+                            .accessibilityHidden(selectedTab != idx)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -69,6 +71,22 @@ struct MainTabView: View {
         .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
     }
+
+    @ViewBuilder
+    private func tabContent(for idx: Int) -> some View {
+        switch idx {
+        case 0:
+            HomeView()
+        case 1:
+            ActivitiesView()
+        case 2:
+            TrainingView()
+        case 3:
+            SettingsView()
+        default:
+            HomeView()
+        }
+    }
     
     var customTabBar: some View {
         VStack(spacing: 0) {
@@ -80,6 +98,7 @@ struct MainTabView: View {
                     
                     Button {
                         withAnimation(.easeInOut(duration: 0.15)) {
+                            loadedTabs.insert(idx)
                             selectedTab = idx
                         }
                     } label: {

@@ -46,7 +46,33 @@ final class APIService: @unchecked Sendable {
             throw serverError(statusCode: httpResponse.statusCode, data: data, fallback: "请求失败")
         }
 
+        // GET 请求自动写入缓存
+        if method == "GET" {
+            await CacheService.shared.set(path, data: data)
+        }
+
         return try decodeResponse(T.self, from: data)
+    }
+    
+    /// 从本地缓存加载数据（不发网络请求）
+    /// 用于页面打开时先展示缓存数据
+    func cached<T: Decodable & Sendable>(_ path: String, as type: T.Type) async -> T? {
+        return await CacheService.shared.get(path, as: type)
+    }
+    
+    /// 使指定缓存失效（写操作后调用）
+    func invalidateCache(_ path: String) async {
+        await CacheService.shared.invalidate(path)
+    }
+    
+    /// 使匹配前缀的缓存失效
+    func invalidateCachePrefix(_ prefix: String) async {
+        await CacheService.shared.invalidatePrefix(prefix)
+    }
+    
+    /// 清除全部缓存（登出时调用）
+    func clearAllCache() async {
+        await CacheService.shared.clearAll()
     }
     
     private func requestVoid(

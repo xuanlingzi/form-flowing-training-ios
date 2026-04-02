@@ -69,6 +69,9 @@ final class AuthManager: ObservableObject {
         if clearStoredCredentials {
             deleteRefreshToken()
         }
+        
+        // 清除本地 API 缓存
+        Task { await CacheService.shared.clearAll() }
     }
 
     private func tokenExpiryDate() -> Date? {

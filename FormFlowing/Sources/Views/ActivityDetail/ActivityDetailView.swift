@@ -13,7 +13,6 @@ struct ActivityDetailView: View {
     @State private var appear = false
     @State private var expandedCharts: Set<String> = ["heartRate", "power"]
     @State private var showReanalyzeSheet = false
-    @State private var reanalyzePrompt = ""
     @State private var showDeepConfirm = false
     
     var sportConfig: (icon: String, color: Color, label: String) {
@@ -327,7 +326,6 @@ struct ActivityDetailView: View {
         
         return Button(action: {
             if isReanalyze {
-                reanalyzePrompt = ""
                 showReanalyzeSheet = true
             } else if isDeep {
                 showDeepConfirm = true
@@ -361,50 +359,13 @@ struct ActivityDetailView: View {
             Text("深度分析使用更高级的 AI 模型，分析速度较慢，请耐心等候。\n\n确定要开始深度分析吗？")
         }
         .sheet(isPresented: $showReanalyzeSheet) {
-            NavigationView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("使用 Pro 模型重新分析本次训练，可输入额外分析要求")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                    
-                    TextEditor(text: $reanalyzePrompt)
-                        .frame(minHeight: 120)
-                        .padding(8)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(10)
-                        .overlay(
-                            Group {
-                                if reanalyzePrompt.isEmpty {
-                                    Text("例如：请重点分析间歇训练的功率衰减情况...")
-                                        .foregroundColor(.gray.opacity(0.5))
-                                        .font(.system(size: 14))
-                                        .padding(.leading, 12)
-                                        .padding(.top, 16)
-                                        .allowsHitTesting(false)
-                                }
-                            },
-                            alignment: .topLeading
-                        )
-                    
-                    Spacer()
-                }
-                .padding(20)
-                .navigationTitle("🔄 重新分析")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { showReanalyzeSheet = false }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("开始分析") {
-                            showReanalyzeSheet = false
-                            doTriggerAnalysis(extraPrompt: reanalyzePrompt)
-                        }
-                        .fontWeight(.semibold)
-                    }
-                }
+            ReanalyzeSheet {
+                showReanalyzeSheet = false
+                doTriggerAnalysis(extraPrompt: $0)
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.fraction(0.72), .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
         }
     }
     
@@ -603,8 +564,10 @@ struct ActivityDetailView: View {
     // MARK: - Data
     
     private func loadData() async {
-        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
-        // detail 最关键，优先请求并退出 loading 状态
+        // 1. 先从本地缓存加载，立即显示
+        await loadFromCache()
+        
+        // 2. 后台请求，拿到最新数据后自动写入缓存并刷新 UI
         async let detailFetch: Void = {
             do {
                 let detail = try await APIService.shared.getActivityDetail(id: activityId)
@@ -614,7 +577,9 @@ struct ActivityDetailView: View {
                     withAnimation { appear = true }
                 }
             } catch {
-                await MainActor.run { loading = false }
+                await MainActor.run { 
+                    if activity == nil { loading = false }
+                }
             }
         }()
         
@@ -640,6 +605,25 @@ struct ActivityDetailView: View {
         _ = await (detailFetch, lapsFetch, recordsFetch, analysisFetch)
     }
     
+    private func loadFromCache() async {
+        if let cached = await APIService.shared.cached("/activity/\(activityId)", as: ActivitySummary.self) {
+            await MainActor.run {
+                activity = cached
+                loading = false
+                withAnimation { appear = true }
+            }
+        }
+        if let cached = await APIService.shared.cached("/activity/\(activityId)/laps", as: [LapData].self) {
+            await MainActor.run { laps = cached }
+        }
+        if let cached = await APIService.shared.cached("/activity/\(activityId)/records", as: [RecordData].self) {
+            await MainActor.run { records = cached }
+        }
+        if let cached = await APIService.shared.cached("/analysis/activity/\(activityId)", as: AnalysisByActivityResponse.self) {
+            await MainActor.run { analysis = cached.records.first }
+        }
+    }
+    
     private func doTriggerAnalysis(extraPrompt: String? = nil) {
         analyzing = true
         Task {
@@ -658,6 +642,125 @@ struct ActivityDetailView: View {
         guard let s = seconds else { return "--" }
         let h = Int(s) / 3600; let m = (Int(s) % 3600) / 60; let sec = Int(s) % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%02d:%02d", m, sec)
+    }
+}
+
+private struct ReanalyzeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var prompt = ""
+    @FocusState private var isEditorFocused: Bool
+
+    let onSubmit: (String?) -> Void
+
+    private var trimmedPrompt: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "waveform.and.magnifyingglass")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                                .background(
+                                    LinearGradient(
+                                        colors: [.blue, .indigo],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                            Text("重新分析")
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.primary)
+                        }
+
+                        Text("使用 Pro 模型重新分析本次训练。你可以补充关注点，结果会更聚焦。")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("补充要求")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(prompt.count)/300")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        ZStack(alignment: .topLeading) {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color(UIColor.secondarySystemGroupedBackground))
+
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.blue.opacity(isEditorFocused ? 0.25 : 0.1), lineWidth: 1)
+
+                            TextEditor(text: Binding(
+                                get: { prompt },
+                                set: { prompt = String($0.prefix(300)) }
+                            ))
+                            .focused($isEditorFocused)
+                            .scrollContentBackground(.hidden)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(minHeight: 180)
+                            .background(Color.clear)
+
+                            if prompt.isEmpty {
+                                Text("例如：请重点分析间歇训练后半程的功率衰减、心率漂移和配速稳定性。")
+                                    .font(.subheadline)
+                                    .foregroundColor(Color(UIColor.placeholderText))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 18)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                    Button(action: {
+                        dismiss()
+                        onSubmit(trimmedPrompt.isEmpty ? nil : trimmedPrompt)
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                            Text("开始分析")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .indigo],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+                .padding(20)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(UIColor.systemGroupedBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
     }
 }
 
