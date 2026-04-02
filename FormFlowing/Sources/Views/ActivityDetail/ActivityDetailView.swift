@@ -39,6 +39,7 @@ struct ActivityDetailView: View {
                         // GPS 轨迹地图
                         if hasGPSData {
                             mapSection
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         
                         // 顶部 hero card
@@ -50,16 +51,19 @@ struct ActivityDetailView: View {
                         // 图表
                         if !records.isEmpty {
                             chartsSection
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // 分圈
                         if laps.count > 1 {
                             lapsSection
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // AI 分析
                         if let analysis = analysis {
                             aiSection(analysis)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // 触发分析按钮
@@ -71,6 +75,9 @@ struct ActivityDetailView: View {
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 15)
                     .animation(.easeOut(duration: 0.5), value: appear)
+                    .animation(.easeInOut(duration: 0.35), value: records.count)
+                    .animation(.easeInOut(duration: 0.35), value: laps.count)
+                    .animation(.easeInOut(duration: 0.35), value: analysis?.id)
                 }
             }
         }
@@ -82,7 +89,6 @@ struct ActivityDetailView: View {
         .hideTabBar()
         .task {
             await loadData()
-            withAnimation { appear = true }
         }
     }
     
@@ -597,28 +603,41 @@ struct ActivityDetailView: View {
     // MARK: - Data
     
     private func loadData() async {
-        do {
-            // 并发请求所有数据，总耗时 = max(单个最慢) 而非累加
-            async let detailTask = APIService.shared.getActivityDetail(id: activityId)
-            async let lapsTask = APIService.shared.getActivityLaps(id: activityId)
-            async let recordsTask = APIService.shared.getActivityRecords(id: activityId)
-            async let analysisTask = APIService.shared.getAnalysisByActivity(activityId: activityId)
-            
-            let detail = try await detailTask
-            let lapsData = try? await lapsTask
-            let recordsData = try? await recordsTask
-            let analysisRes = try? await analysisTask
-            
-            await MainActor.run {
-                activity = detail
-                laps = lapsData ?? []
-                records = recordsData ?? []
-                analysis = analysisRes?.records.first
-                loading = false
+        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
+        // detail 最关键，优先请求并退出 loading 状态
+        async let detailFetch: Void = {
+            do {
+                let detail = try await APIService.shared.getActivityDetail(id: activityId)
+                await MainActor.run {
+                    activity = detail
+                    loading = false
+                    withAnimation { appear = true }
+                }
+            } catch {
+                await MainActor.run { loading = false }
             }
-        } catch {
-            await MainActor.run { loading = false }
-        }
+        }()
+        
+        async let lapsFetch: Void = {
+            if let data = try? await APIService.shared.getActivityLaps(id: activityId) {
+                await MainActor.run { withAnimation { laps = data } }
+            }
+        }()
+        
+        async let recordsFetch: Void = {
+            if let data = try? await APIService.shared.getActivityRecords(id: activityId) {
+                await MainActor.run { withAnimation { records = data } }
+            }
+        }()
+        
+        async let analysisFetch: Void = {
+            if let res = try? await APIService.shared.getAnalysisByActivity(activityId: activityId) {
+                await MainActor.run { withAnimation { analysis = res.records.first } }
+            }
+        }()
+        
+        // 等待所有并发任务完成（各自内部已独立更新 UI）
+        _ = await (detailFetch, lapsFetch, recordsFetch, analysisFetch)
     }
     
     private func doTriggerAnalysis(extraPrompt: String? = nil) {

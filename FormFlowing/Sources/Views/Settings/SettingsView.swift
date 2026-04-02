@@ -618,29 +618,48 @@ struct SettingsView: View {
     // MARK: - Data
     
     private func loadData() async {
-        do {
-            let profileRes = try await APIService.shared.getProfile()
-            let accountRes = try? await APIService.shared.getAccount()
-            let goalRes = try? await APIService.shared.getTrainingGoal()
-            await MainActor.run {
-                if let p = profileRes.profile { profile = p }
-                account = accountRes
-                cnUsername = accountRes?.cnUsername ?? ""
-                globalUsername = accountRes?.globalUsername ?? ""
-                syncFrequency = Double(accountRes?.syncFrequency ?? 180)
-                syncCnGlobal = accountRes?.syncCnGlobal ?? true
-                syncToStrava = accountRes?.syncToStrava ?? false
-                stravaConnected = accountRes?.stravaConnected ?? false
-                igpsConfigured = accountRes?.igpsportConfigured ?? false
-                igpsUsername = accountRes?.igpsportUsername ?? ""
-                intervalsConfigured = accountRes?.intervalsConfigured ?? false
-                intervalsUserId = accountRes?.intervalsUserId ?? ""
-                trainingGoalContent = goalRes?.content ?? ""
-                trainingGoalUpdatedAt = goalRes?.updatedAt
+        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
+        async let profileFetch: Void = {
+            if let profileRes = try? await APIService.shared.getProfile(),
+               let p = profileRes.profile {
+                await MainActor.run { profile = p }
             }
-            // Load platform status after account data is loaded
-            loadPlatformStatus()
-        } catch {}
+        }()
+        
+        async let accountFetch: Void = {
+            if let accountRes = try? await APIService.shared.getAccount() {
+                await MainActor.run {
+                    account = accountRes
+                    cnUsername = accountRes.cnUsername ?? ""
+                    globalUsername = accountRes.globalUsername ?? ""
+                    syncFrequency = Double(accountRes.syncFrequency ?? 180)
+                    syncCnGlobal = accountRes.syncCnGlobal ?? true
+                    syncToStrava = accountRes.syncToStrava ?? false
+                    stravaConnected = accountRes.stravaConnected ?? false
+                    igpsConfigured = accountRes.igpsportConfigured ?? false
+                    igpsUsername = accountRes.igpsportUsername ?? ""
+                    intervalsConfigured = accountRes.intervalsConfigured ?? false
+                    intervalsUserId = accountRes.intervalsUserId ?? ""
+                }
+            }
+        }()
+        
+        async let goalFetch: Void = {
+            if let goalRes = try? await APIService.shared.getTrainingGoal() {
+                await MainActor.run {
+                    trainingGoalContent = goalRes.content ?? ""
+                    trainingGoalUpdatedAt = goalRes.updatedAt
+                }
+            }
+        }()
+        
+        async let statusFetch: Void = {
+            if let statusRes = try? await APIService.shared.getAccountStatus() {
+                await MainActor.run { platformStatuses = statusRes.platforms }
+            }
+        }()
+        
+        _ = await (profileFetch, accountFetch, goalFetch, statusFetch)
     }
     
     private func loadPlatformStatus() {

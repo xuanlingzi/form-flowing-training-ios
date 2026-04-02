@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Auth
 
-struct LoginResponse: Codable {
+struct LoginResponse: Codable, Sendable {
     let accessToken: String
     let refreshToken: String?
     let tokenType: String?
@@ -11,7 +11,7 @@ struct LoginResponse: Codable {
 
 // MARK: - Account
 
-struct AccountInfo: Codable {
+struct AccountInfo: Codable, Sendable {
     let accountId: Int?
     let username: String?
     let cnUsername: String?
@@ -30,7 +30,7 @@ struct AccountInfo: Codable {
 
 // MARK: - Platform Status
 
-struct PlatformStatus: Codable, Identifiable {
+struct PlatformStatus: Codable, Identifiable, Sendable {
     var id: String { platform }
     let platform: String
     let configured: Bool
@@ -38,13 +38,13 @@ struct PlatformStatus: Codable, Identifiable {
     let message: String
 }
 
-struct AccountStatusResponse: Codable {
+struct AccountStatusResponse: Codable, Sendable {
     let platforms: [PlatformStatus]
 }
 
 // MARK: - iGPSport Config
 
-struct IGPSportConfigResponse: Codable {
+struct IGPSportConfigResponse: Codable, Sendable {
     let configured: Bool
     let username: String?
     let connected: Bool
@@ -53,7 +53,7 @@ struct IGPSportConfigResponse: Codable {
 
 // MARK: - Intervals.icu Config
 
-struct IntervalsConfigResponse: Codable {
+struct IntervalsConfigResponse: Codable, Sendable {
     let configured: Bool
     let userId: String?
     let connected: Bool
@@ -63,11 +63,11 @@ struct IntervalsConfigResponse: Codable {
 
 // MARK: - Profile
 
-struct ProfileResponse: Codable {
+struct ProfileResponse: Codable, Sendable {
     let profile: UserProfile?
 }
 
-struct UserProfile: Codable {
+struct UserProfile: Codable, Sendable {
     var weightKg: Double?
     var heightCm: Double?
     var birthDate: String?
@@ -98,11 +98,11 @@ struct UserProfile: Codable {
     }
 }
 
-struct GarminStatusResponse: Codable {
+struct GarminStatusResponse: Codable, Sendable {
     let status: GarminUserStatus?
 }
 
-struct GarminUserStatus: Codable {
+struct GarminUserStatus: Codable, Sendable {
     let calendarDate: String?
     let weightKg: Double?
     let heightCm: Double?
@@ -173,7 +173,7 @@ struct GarminUserStatus: Codable {
 
 // MARK: - Activities
 
-struct ActivityListItem: Codable, Identifiable {
+struct ActivityListItem: Codable, Identifiable, Sendable {
     var id: Int { activityId }
     let activityId: Int
     let activityName: String?
@@ -193,7 +193,7 @@ struct ActivityListItem: Codable, Identifiable {
     let analysisStatus: String?
 }
 
-struct ActivitySummary: Codable, Identifiable {
+struct ActivitySummary: Codable, Identifiable, Sendable {
     var id: Int { activityId }
     let activityId: Int
     let garminActivityId: Int?
@@ -226,7 +226,7 @@ struct ActivitySummary: Codable, Identifiable {
     let numLaps: Int?
 }
 
-struct LapData: Codable, Identifiable {
+struct LapData: Codable, Identifiable, Sendable {
     var id: Int { lapIndex }
     let lapIndex: Int
     let startTime: String?
@@ -246,7 +246,7 @@ struct LapData: Codable, Identifiable {
     let totalCalories: Int?
 }
 
-struct RecordData: Codable {
+struct RecordData: Codable, Sendable {
     let timestamp: String?
     let heartRate: Int?
     let power: Int?
@@ -261,7 +261,7 @@ struct RecordData: Codable {
 
 // MARK: - Analysis
 
-struct AnalysisResult: Codable, Identifiable {
+struct AnalysisResult: Codable, Identifiable, Sendable {
     var id: Int { analysisResultId }
     let analysisResultId: Int
     let activityId: Int
@@ -279,18 +279,18 @@ struct AnalysisResult: Codable, Identifiable {
     let avgPower: Int?
 }
 
-struct AnalysisHistoryResponse: Codable {
+struct AnalysisHistoryResponse: Codable, Sendable {
     let total: Int
     let page: Int
     let size: Int
     let records: [AnalysisResult]
 }
 
-struct AnalysisByActivityResponse: Codable {
+struct AnalysisByActivityResponse: Codable, Sendable {
     let records: [AnalysisResult]
 }
 
-struct AnalysisStatusResponse: Codable {
+struct AnalysisStatusResponse: Codable, Sendable {
     let analyzing: Bool
     let queueId: Int?
     let status: String?
@@ -298,11 +298,11 @@ struct AnalysisStatusResponse: Codable {
 
 // MARK: - Training Plan
 
-struct TrainingPlanStatusResponse: Codable {
+struct TrainingPlanStatusResponse: Codable, Sendable {
     let isGenerating: Bool
 }
 
-struct TrainingPlan: Codable, Identifiable {
+struct TrainingPlan: Codable, Identifiable, Sendable {
     var id: Int { trainingPlanId }
     let trainingPlanId: Int
     let planName: String
@@ -316,16 +316,16 @@ struct TrainingPlan: Codable, Identifiable {
     let createdAt: String?
 }
 
-struct TrainingPlanListResponse: Codable {
+struct TrainingPlanListResponse: Codable, Sendable {
     let plans: [TrainingPlan]
 }
 
-struct TrainingPlanDetailResponse: Codable {
+struct TrainingPlanDetailResponse: Codable, Sendable {
     let plan: TrainingPlan
     let workouts: [Workout]
 }
 
-struct Workout: Codable, Identifiable {
+struct Workout: Codable, Identifiable, Sendable {
     var id: Int { trainingPlanWorkoutId }
     let trainingPlanWorkoutId: Int
     let workoutDate: String?
@@ -341,7 +341,7 @@ struct Workout: Codable, Identifiable {
     let steps: [WorkoutStep]?
 }
 
-struct WorkoutStep: Codable {
+struct WorkoutStep: Codable, Sendable {
     let type: String
     let durationSec: Int?
     let distanceM: Double?
@@ -356,7 +356,7 @@ struct WorkoutStep: Codable {
     let steps: [WorkoutStep]?
 }
 
-struct MemoryItem: Codable, Identifiable {
+struct MemoryItem: Codable, Identifiable, Sendable {
     var id: String { type }
     let type: String
     let label: String?
@@ -368,20 +368,20 @@ struct MemoryItem: Codable, Identifiable {
     let updatedAt: String?
 }
 
-struct MemoryListResponse: Codable {
+struct MemoryListResponse: Codable, Sendable {
     let memories: [MemoryItem]
 }
 
 // MARK: - Training Goal
 
-struct TrainingGoalResponse: Codable {
+struct TrainingGoalResponse: Codable, Sendable {
     let content: String?
     let updatedAt: String?
 }
 
 // MARK: - Upload
 
-struct UploadResponse: Codable {
+struct UploadResponse: Codable, Sendable {
     let message: String?
     let activityId: Int?
 }

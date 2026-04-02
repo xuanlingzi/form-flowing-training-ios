@@ -857,26 +857,36 @@ struct TrainingView: View {
                     ?? fetchedPlans.first?.trainingPlanId
             }
             
-            // 加载所有计划的课程并合并
+            // 并发加载所有计划的课程（而非串行循环）
             if !fetchedPlans.isEmpty {
+                // 为每个 plan 创建独立 Task 并发请求 detail
+                let tasks = fetchedPlans.map { plan in
+                    Task { () -> (Int, [Workout])? in
+                        guard let detail = try? await APIService.shared.getPlanDetail(planId: plan.trainingPlanId) else { return nil }
+                        return (plan.trainingPlanId, detail.workouts)
+                    }
+                }
+                
+                // 收集所有结果
                 var allWorkouts: [Workout] = []
                 var groupedWorkouts: [Int: [Workout]] = [:]
                 var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
-                for plan in fetchedPlans {
-                    do {
-                        let detail = try await APIService.shared.getPlanDetail(planId: plan.trainingPlanId)
-                        allWorkouts.append(contentsOf: detail.workouts)
-                        groupedWorkouts[plan.trainingPlanId] = detail.workouts
-                        for workout in detail.workouts {
-                            planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
-                                title: plan.planName,
-                                intro: plan.description
-                            )
+                
+                for task in tasks {
+                    if let (planId, workoutsForPlan) = await task.value {
+                        allWorkouts.append(contentsOf: workoutsForPlan)
+                        groupedWorkouts[planId] = workoutsForPlan
+                        if let plan = fetchedPlans.first(where: { $0.trainingPlanId == planId }) {
+                            for workout in workoutsForPlan {
+                                planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
+                                    title: plan.planName,
+                                    intro: plan.description
+                                )
+                            }
                         }
-                    } catch {
-                        // 单个计划加载失败不影响其他计划
                     }
                 }
+                
                 await MainActor.run {
                     self.workouts = allWorkouts
                     self.workoutsByPlan = groupedWorkouts

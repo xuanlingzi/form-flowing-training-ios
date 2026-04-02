@@ -63,10 +63,12 @@ struct HomeView: View {
                         .opacity(appear ? 1 : 0)
                         .offset(y: appear ? 0 : 15)
                         .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
+                        .animation(.easeInOut(duration: 0.35), value: recentActivities.count)
                         
                         // AI 分析
                         if !recentActivities.isEmpty {
                             analysisSection
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                                 .opacity(appear ? 1 : 0)
                                 .offset(y: appear ? 0 : 15)
                                 .animation(.easeOut(duration: 0.5).delay(0.2), value: appear)
@@ -99,7 +101,6 @@ struct HomeView: View {
             }
             .task {
                 await loadData()
-                withAnimation { appear = true }
             }
         }
     }
@@ -664,15 +665,27 @@ struct HomeView: View {
     }
     
     private func loadData() async {
-        async let statusTask = try? APIService.shared.getGarminStatus()
-        async let activitiesTask = try? APIService.shared.getActivities(page: 1, pageSize: 10)
-        let (statusRes, activitiesRes) = await (statusTask, activitiesTask)
-        await MainActor.run {
-            garminStatus = statusRes?.status
-            // 只取有 AI 分析摘要的活动，最多 3 条
-            recentActivities = (activitiesRes ?? []).filter { $0.analysisSummary != nil }.prefix(3).map { $0 }
-            loading = false
-        }
+        // 各请求独立执行，完成后立即更新 UI，实现渐进式渲染
+        async let statusFetch: Void = {
+            if let res = try? await APIService.shared.getGarminStatus() {
+                await MainActor.run {
+                    garminStatus = res.status
+                    loading = false
+                    withAnimation { appear = true }
+                }
+            } else {
+                await MainActor.run { loading = false }
+            }
+        }()
+        
+        async let activitiesFetch: Void = {
+            if let items = try? await APIService.shared.getActivities(page: 1, pageSize: 10) {
+                let filtered = items.filter { $0.analysisSummary != nil }.prefix(3).map { $0 }
+                await MainActor.run { withAnimation { recentActivities = filtered } }
+            }
+        }()
+        
+        _ = await (statusFetch, activitiesFetch)
     }
     
     private func formatDate(_ date: Date) -> String {
