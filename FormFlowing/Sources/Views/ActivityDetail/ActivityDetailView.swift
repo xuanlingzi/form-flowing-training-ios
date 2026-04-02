@@ -598,10 +598,17 @@ struct ActivityDetailView: View {
     
     private func loadData() async {
         do {
-            let detail = try await APIService.shared.getActivityDetail(id: activityId)
-            let lapsData = try? await APIService.shared.getActivityLaps(id: activityId)
-            let recordsData = try? await APIService.shared.getActivityRecords(id: activityId)
-            let analysisRes = try? await APIService.shared.getAnalysisByActivity(activityId: activityId)
+            // 并发请求所有数据，总耗时 = max(单个最慢) 而非累加
+            async let detailTask = APIService.shared.getActivityDetail(id: activityId)
+            async let lapsTask = APIService.shared.getActivityLaps(id: activityId)
+            async let recordsTask = APIService.shared.getActivityRecords(id: activityId)
+            async let analysisTask = APIService.shared.getAnalysisByActivity(activityId: activityId)
+            
+            let detail = try await detailTask
+            let lapsData = try? await lapsTask
+            let recordsData = try? await recordsTask
+            let analysisRes = try? await analysisTask
+            
             await MainActor.run {
                 activity = detail
                 laps = lapsData ?? []

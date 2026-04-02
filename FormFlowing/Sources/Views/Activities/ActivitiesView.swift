@@ -14,6 +14,7 @@ struct ActivitiesView: View {
     @State private var page = 1
     @State private var appear = false
     @State private var scrollOffset: CGFloat = 0
+    @State private var showUploadSheet = false
     
     private var collapseProgress: CGFloat {
         min(max(scrollOffset / 60, 0), 1)
@@ -89,6 +90,13 @@ struct ActivitiesView: View {
                 await loadActivities()
                 withAnimation { appear = true }
             }
+            .sheet(isPresented: $showUploadSheet) {
+                NavigationStack {
+                    UploadView()
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
         }
     }
     
@@ -97,11 +105,14 @@ struct ActivitiesView: View {
             Text("运动日志")
                 .font(.system(size: 20, weight: .bold))
             Spacer()
-            NavigationLink(destination: UploadView()) {
+            Button(action: {
+                showUploadSheet = true
+            }) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 22))
                     .foregroundStyle(.linearGradient(colors: [.teal, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal)
         .frame(height: 44)

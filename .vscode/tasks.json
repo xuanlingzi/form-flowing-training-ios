@@ -49,6 +49,34 @@
             "detail": "编译项目至模拟器 (iPhone 17)"
         },
         {
+            "label": "Deploy to Simulator",
+            "type": "shell",
+            "command": "xcrun simctl boot 'iPhone 17' 2>/dev/null || true; open -a Simulator; xcrun simctl terminate 'iPhone 17' com.formflowing.app 2>/dev/null || true; xcrun simctl install 'iPhone 17' .build/DerivedData/Build/Products/Debug-iphonesimulator/FormFlowing.app && xcrun simctl launch --wait-for-debugger 'iPhone 17' com.formflowing.app",
+            "dependsOn": [
+                "Build for Simulator"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "部署并以调试模式启动 App（等待调试器附加）"
+        },
+        {
+            "label": "Run on Simulator",
+            "type": "shell",
+            "command": "xcrun simctl boot 'iPhone 17' 2>/dev/null || true; open -a Simulator; xcrun simctl terminate 'iPhone 17' com.formflowing.app 2>/dev/null || true; xcrun simctl install 'iPhone 17' .build/DerivedData/Build/Products/Debug-iphonesimulator/FormFlowing.app && xcrun simctl launch 'iPhone 17' com.formflowing.app",
+            "dependsOn": [
+                "Build for Simulator"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "部署并直接运行 App（无调试器）"
+        },
+        {
             "label": "Clean Build",
             "type": "shell",
             "command": "rm -rf .build/DerivedData && xcodebuild clean",

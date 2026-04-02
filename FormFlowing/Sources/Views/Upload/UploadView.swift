@@ -109,6 +109,11 @@ struct UploadView: View {
         .background(Color(UIColor.systemGroupedBackground))
         .navigationTitle("上传活动")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("关闭") { dismiss() }
+            }
+        }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [fitContentType],

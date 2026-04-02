@@ -2,15 +2,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug (iPhone 17 Simulator)",
+            "name": "Debug on iPhone 17 Simulator",
             "type": "lldb",
-            "request": "launch",
-            "preLaunchTask": "Build for Simulator",
-            "program": "${workspaceFolder}/.build/DerivedData/Build/Products/Debug-iphonesimulator/FormFlowing.app",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "stopOnEntry": false,
-            "terminal": "integrated",
+            "request": "custom",
+            "preLaunchTask": "Deploy to Simulator",
+            "targetCreateCommands": [
+                "target create \"${workspaceFolder}/.build/DerivedData/Build/Products/Debug-iphonesimulator/FormFlowing.app/FormFlowing\""
+            ],
+            "processCreateCommands": [
+                "process attach --name FormFlowing",
+                "continue"
+            ],
             "sourceLanguages": [
                 "swift",
                 "objective-c"
