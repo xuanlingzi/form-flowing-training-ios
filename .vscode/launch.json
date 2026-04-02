@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug (iPhone 17 Simulator)",
+            "type": "lldb",
+            "request": "launch",
+            "preLaunchTask": "Build for Simulator",
+            "program": "${workspaceFolder}/.build/DerivedData/Build/Products/Debug-iphonesimulator/FormFlowing.app",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "terminal": "integrated",
+            "sourceLanguages": [
+                "swift",
+                "objective-c"
+            ]
+        }
+    ]
+}

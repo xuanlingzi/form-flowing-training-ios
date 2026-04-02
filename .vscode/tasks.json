@@ -1,0 +1,59 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Generate Project",
+            "type": "shell",
+            "command": "xcodegen",
+            "args": [
+                "generate"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "使用 XcodeGen 从 project.yml 生成 .xcodeproj 文件"
+        },
+        {
+            "label": "Build for Simulator",
+            "type": "shell",
+            "command": "xcodebuild",
+            "args": [
+                "-project",
+                "FormFlowing.xcodeproj",
+                "-scheme",
+                "FormFlowing",
+                "-destination",
+                "platform=iOS Simulator,name=iPhone 17",
+                "-derivedDataPath",
+                ".build/DerivedData",
+                "build"
+            ],
+            "dependsOn": [
+                "Generate Project"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "编译项目至模拟器 (iPhone 17)"
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "rm -rf .build/DerivedData && xcodebuild clean",
+            "group": "build",
+            "detail": "清理构建缓存"
+        }
+    ]
+}

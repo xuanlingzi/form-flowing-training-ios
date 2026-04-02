@@ -1,7 +1,8 @@
 import Foundation
 
 /// API 服务层 — 与前端 api.ts 1:1 对应
-final class APIService {
+@MainActor
+final class APIService: @unchecked Sendable {
     static let shared = APIService()
 
     // TODO: 替换为实际 API 地址（生产环境）
