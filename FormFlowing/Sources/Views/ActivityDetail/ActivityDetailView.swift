@@ -14,6 +14,14 @@ struct ActivityDetailView: View {
     @State private var expandedCharts: Set<String> = ["heartRate", "power"]
     @State private var showReanalyzeSheet = false
     @State private var showDeepConfirm = false
+    // Chat
+    @State private var chatMessages: [(role: String, content: String, adjustments: [PlanAdjustment]?)] = []
+    @State private var chatInput = ""
+    @State private var chatLoading = false
+    @State private var chatError: String?
+    @State private var pendingAdjustments: [PlanAdjustment]?
+    @State private var applyingAdjustments = false
+    @State private var adjustmentSuccess: String?
     
     var sportConfig: (icon: String, color: Color, label: String) {
         switch activity?.sport {
@@ -291,6 +299,29 @@ struct ActivityDetailView: View {
             }
             
             MarkdownTextView(markdown: analysis.resultMd ?? "", baseFontSize: 13)
+            
+            // MARK: - 追问区域
+            if analysis.canChat == true {
+                Divider().padding(.vertical, 4)
+                
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .foregroundColor(.indigo)
+                    Text("继续追问").font(.system(size: 14, weight: .semibold))
+                }
+                
+                AnalysisChatView(
+                    messages: chatMessages,
+                    pendingAdjustments: pendingAdjustments,
+                    applyingAdjustments: applyingAdjustments,
+                    adjustmentSuccess: adjustmentSuccess,
+                    chatError: chatError,
+                    chatInput: $chatInput,
+                    chatLoading: chatLoading,
+                    onSend: { doSendChat(analysisId: analysis.analysisResultId) },
+                    onApply: { doApplyAdjustments() }
+                )
+            }
         }
         .padding(18)
         .background(.white)
@@ -638,6 +669,85 @@ struct ActivityDetailView: View {
         }
     }
     
+    private func doSendChat(analysisId: Int) {
+        let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, !chatLoading else { return }
+        
+        chatMessages.append((role: "user", content: message, adjustments: nil))
+        chatInput = ""
+        chatLoading = true
+        chatError = nil
+        
+        Task {
+            do {
+                let res = try await APIService.shared.analysisChat(
+                    analysisResultId: analysisId,
+                    message: message
+                )
+                await MainActor.run {
+                    chatMessages.append((
+                        role: "assistant",
+                        content: res.reply,
+                        adjustments: res.adjustments
+                    ))
+                    pendingAdjustments = res.adjustments
+                    chatLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    chatError = error.localizedDescription
+                    chatLoading = false
+                }
+            }
+        }
+    }
+    
+    private func doApplyAdjustments() {
+        guard let pending = pendingAdjustments, !pending.isEmpty,
+              let analysisId = analysis?.analysisResultId else { return }
+        
+        applyingAdjustments = true
+        adjustmentSuccess = nil
+        
+        // Convert PlanAdjustment to [[String: Any]] for API
+        let adjustmentDicts: [[String: Any]] = pending.map { adj in
+            var dict: [String: Any] = ["action": adj.action]
+            if let wid = adj.workoutId { dict["workout_id"] = wid }
+            if let swid = adj.swapWithWorkoutId { dict["swap_with_workout_id"] = swid }
+            if let reason = adj.reason { dict["reason"] = reason }
+            return dict
+        }
+        
+        Task {
+            do {
+                let result = try await APIService.shared.applyAnalysisAdjustments(
+                    analysisResultId: analysisId,
+                    adjustments: adjustmentDicts
+                )
+                await MainActor.run {
+                    applyingAdjustments = false
+                    pendingAdjustments = nil
+                    adjustmentSuccess = result.message ?? "已成功应用 \(result.applied) 项调整"
+                }
+            } catch {
+                await MainActor.run {
+                    applyingAdjustments = false
+                    chatError = error.localizedDescription
+                }
+            }
+        }
+    }
+    
+    private func adjustmentActionLabel(_ action: String) -> String {
+        switch action {
+        case "modify": return "📝 修改"
+        case "skip": return "⏭️ 跳过"
+        case "reduce": return "⬇️ 降强度"
+        case "swap": return "🔄 交换"
+        default: return action
+        }
+    }
+    
     private func formatDuration(_ seconds: Double?) -> String {
         guard let s = seconds else { return "--" }
         let h = Int(s) / 3600; let m = (Int(s) % 3600) / 60; let sec = Int(s) % 60
@@ -808,4 +918,207 @@ struct ChartDataPoint: Identifiable {
     let index: Int
     let value: Double
     var id: Int { index }
+}
+
+// MARK: - Analysis Chat View (extracted to avoid type-checker timeout)
+
+struct AnalysisChatView: View {
+    let messages: [(role: String, content: String, adjustments: [PlanAdjustment]?)]
+    let pendingAdjustments: [PlanAdjustment]?
+    let applyingAdjustments: Bool
+    let adjustmentSuccess: String?
+    let chatError: String?
+    @Binding var chatInput: String
+    let chatLoading: Bool
+    let onSend: () -> Void
+    let onApply: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 消息列表
+            ForEach(Array(messages.enumerated()), id: \.offset) { _, msg in
+                ChatBubbleView(
+                    role: msg.role,
+                    content: msg.content,
+                    adjustments: msg.adjustments
+                )
+            }
+            
+            // 待应用调整
+            if let pending = pendingAdjustments, !pending.isEmpty {
+                pendingBar(count: pending.count)
+            }
+            
+            // 调整成功提示
+            if let successMsg = adjustmentSuccess {
+                successBanner(successMsg)
+            }
+            
+            // 错误提示
+            if let err = chatError {
+                errorBanner(err)
+            }
+            
+            // 输入区
+            chatInputBar
+        }
+    }
+    
+    private func pendingBar(count: Int) -> some View {
+        HStack {
+            Text("共 \(count) 项调整待确认")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.green)
+            Spacer()
+            Button(action: onApply) {
+                Text(applyingAdjustments ? "应用中..." : "✅ 确认应用")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(applyingAdjustments ? Color.gray : Color.green)
+                    .cornerRadius(8)
+            }
+            .disabled(applyingAdjustments)
+        }
+        .padding(10)
+        .background(Color.green.opacity(0.08))
+        .cornerRadius(10)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.green.opacity(0.25), lineWidth: 1))
+    }
+    
+    private func successBanner(_ msg: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+            Text(msg).font(.system(size: 12)).foregroundColor(.green)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.green.opacity(0.08))
+        .cornerRadius(8)
+    }
+    
+    private func errorBanner(_ err: String) -> some View {
+        Text(err)
+            .font(.system(size: 12))
+            .foregroundColor(.red)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.08))
+            .cornerRadius(8)
+    }
+    
+    private var chatInputBar: some View {
+        let isEmpty = chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(spacing: 8) {
+            TextField("针对这次训练继续提问", text: $chatInput, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(1...4)
+                .padding(10)
+                .background(Color(UIColor.systemGray6))
+                .cornerRadius(10)
+                .disabled(chatLoading)
+            
+            Button(action: onSend) {
+                Group {
+                    if chatLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .background(isEmpty || chatLoading ? Color.gray.opacity(0.3) : Color.blue)
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .disabled(isEmpty || chatLoading)
+        }
+    }
+}
+
+// MARK: - Chat Bubble
+
+private struct ChatBubbleView: View {
+    let role: String
+    let content: String
+    let adjustments: [PlanAdjustment]?
+    
+    var body: some View {
+        HStack {
+            if role == "user" { Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 6) {
+                if role == "assistant" {
+                    MarkdownTextView(markdown: content, baseFontSize: 12)
+                } else {
+                    Text(content).font(.system(size: 13))
+                }
+                if let adjustments, !adjustments.isEmpty {
+                    AdjustmentPreviewView(adjustments: adjustments)
+                }
+            }
+            .padding(role == "user" ? 8 : 10)
+            .background(role == "user" ? Color.blue.opacity(0.08) : Color(UIColor.systemGray6))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(role == "user" ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15), lineWidth: 1)
+            )
+            if role == "assistant" { Spacer(minLength: 20) }
+        }
+    }
+}
+
+// MARK: - Adjustment Preview
+
+private struct AdjustmentPreviewView: View {
+    let adjustments: [PlanAdjustment]
+    
+    private func actionLabel(_ action: String) -> String {
+        switch action {
+        case "modify": return "📝 修改"
+        case "skip": return "⏭️ 跳过"
+        case "reduce": return "⬇️ 降强度"
+        case "swap": return "🔄 交换"
+        default: return action
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundColor(.orange)
+                Text("AI 建议的计划调整")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(Color(red: 0.57, green: 0.25, blue: 0.05))
+            }
+            ForEach(Array(adjustments.enumerated()), id: \.offset) { _, adj in
+                adjustmentRow(adj)
+            }
+        }
+        .padding(10)
+        .background(
+            LinearGradient(colors: [Color.yellow.opacity(0.15), Color.yellow.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.4), lineWidth: 1))
+    }
+    
+    private func adjustmentRow(_ adj: PlanAdjustment) -> some View {
+        HStack(spacing: 4) {
+            Text(actionLabel(adj.action)).font(.system(size: 11, weight: .semibold))
+            if let wid = adj.workoutId {
+                Text("#\(wid)").font(.system(size: 11)).foregroundColor(.secondary)
+            }
+            if let reason = adj.reason {
+                Text("— \(reason)").font(.system(size: 11)).foregroundColor(.secondary).lineLimit(2)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .cornerRadius(6)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.yellow.opacity(0.5), lineWidth: 1))
+    }
 }

@@ -272,6 +272,7 @@ struct AnalysisResult: Codable, Identifiable, Sendable {
     let modelUsed: String?
     let resultMd: String?
     let memoryDelta: String?
+    let canChat: Bool?
     let createdAt: String?
     let activityName: String?
     let activityDate: String?
@@ -296,6 +297,38 @@ struct AnalysisStatusResponse: Codable, Sendable {
     let analyzing: Bool
     let queueId: Int?
     let status: String?
+}
+
+// MARK: - Analysis Chat & Plan Adjustment
+
+struct PlanAdjustment: Codable, Sendable {
+    let action: String  // modify / skip / reduce / swap
+    let workoutId: Int?
+    let swapWithWorkoutId: Int?
+    let reason: String?
+    let changes: [String: AnyCodableValue]?
+}
+
+struct AdjustmentDetail: Codable, Sendable {
+    let workoutId: Int?
+    let action: String?
+    let status: String?
+    let message: String?
+}
+
+struct AdjustmentResult: Codable, Sendable {
+    let applied: Int
+    let skipped: Int
+    let details: [AdjustmentDetail]?
+    let message: String?
+}
+
+struct AnalysisChatResponse: Codable, Sendable {
+    let analysisResultId: Int
+    let reply: String
+    let adjustments: [PlanAdjustment]?
+    let adjustmentApplied: AdjustmentResult?
+    let canChat: Bool?
 }
 
 // MARK: - Training Plan

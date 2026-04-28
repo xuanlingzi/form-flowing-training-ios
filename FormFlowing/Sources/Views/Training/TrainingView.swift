@@ -1082,7 +1082,8 @@ struct TrainingView: View {
         
         var req: [String: Any] = [
             "duration_weeks": Int(form.weeks),
-            "start_date": startDate
+            "start_date": startDate,
+            "training_goal": form.goal
         ]
         req["extra_requirements"] = buildExtraRequirements(from: form)
         

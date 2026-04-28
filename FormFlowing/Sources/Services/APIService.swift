@@ -316,6 +316,21 @@ final class APIService: @unchecked Sendable {
         return try await request("/analysis/status/\(activityId)")
     }
     
+    func analysisChat(analysisResultId: Int, message: String, autoApply: Bool = false) async throws -> AnalysisChatResponse {
+        var body: [String: Any] = ["message": message]
+        if autoApply { body["auto_apply"] = true }
+        return try await request("/analysis/\(analysisResultId)/chat", method: "POST", body: body, timeout: 120)
+    }
+    
+    func applyAnalysisAdjustments(analysisResultId: Int, adjustments: [[String: Any]]) async throws -> AdjustmentResult {
+        return try await request(
+            "/analysis/\(analysisResultId)/apply-adjustments",
+            method: "POST",
+            body: ["adjustments": adjustments],
+            timeout: 60
+        )
+    }
+    
     // MARK: - 训练计划
     
     func getTrainingPlans() async throws -> TrainingPlanListResponse {
