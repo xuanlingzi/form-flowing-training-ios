@@ -632,8 +632,18 @@ struct ActivityDetailView: View {
             }
         }()
         
+        async let statusFetch: Void = {
+            if let status = try? await APIService.shared.getAnalysisStatus(activityId: activityId),
+               status.analyzing {
+                await MainActor.run {
+                    analyzing = true
+                    pollAnalysisResult()
+                }
+            }
+        }()
+        
         // 等待所有并发任务完成（各自内部已独立更新 UI）
-        _ = await (detailFetch, lapsFetch, recordsFetch, analysisFetch)
+        _ = await (detailFetch, lapsFetch, recordsFetch, analysisFetch, statusFetch)
     }
     
     private func loadFromCache() async {
@@ -660,12 +670,37 @@ struct ActivityDetailView: View {
         Task {
             do {
                 try await APIService.shared.triggerAnalysis(activityId: activityId, extraPrompt: extraPrompt)
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                let res = try? await APIService.shared.getAnalysisByActivity(activityId: activityId)
-                await MainActor.run { analysis = res?.records.first; analyzing = false }
+                pollAnalysisResult()
             } catch {
                 await MainActor.run { analyzing = false }
             }
+        }
+    }
+    
+    private func pollAnalysisResult() {
+        Task {
+            var checks = 0
+            while checks < 60 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s
+                
+                // 检查是否还在分析
+                if let status = try? await APIService.shared.getAnalysisStatus(activityId: activityId),
+                   !status.analyzing {
+                    // 分析完成，获取结果
+                    if let res = try? await APIService.shared.getAnalysisByActivity(activityId: activityId) {
+                        await MainActor.run {
+                            withAnimation { analysis = res.records.first }
+                            analyzing = false
+                        }
+                    } else {
+                        await MainActor.run { analyzing = false }
+                    }
+                    return
+                }
+                checks += 1
+            }
+            // 超时
+            await MainActor.run { analyzing = false }
         }
     }
     
