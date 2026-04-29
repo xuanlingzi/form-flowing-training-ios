@@ -331,6 +331,18 @@ struct AnalysisChatResponse: Codable, Sendable {
     let canChat: Bool?
 }
 
+struct ChatHistoryMessage: Codable, Sendable {
+    let role: String
+    let content: String
+    let adjustments: [PlanAdjustment]?
+    let createdAt: String?
+}
+
+struct ChatHistoryResponse: Codable, Sendable {
+    let analysisResultId: Int
+    let messages: [ChatHistoryMessage]
+}
+
 // MARK: - Training Plan
 
 struct TrainingPlanStatusResponse: Codable, Sendable {

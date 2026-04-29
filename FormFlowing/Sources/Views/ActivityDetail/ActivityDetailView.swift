@@ -628,7 +628,20 @@ struct ActivityDetailView: View {
         
         async let analysisFetch: Void = {
             if let res = try? await APIService.shared.getAnalysisByActivity(activityId: activityId) {
-                await MainActor.run { withAnimation { analysis = res.records.first } }
+                let firstResult = res.records.first
+                await MainActor.run { withAnimation { analysis = firstResult } }
+                
+                // 加载追问对话历史
+                if let ar = firstResult, ar.canChat == true {
+                    if let hist = try? await APIService.shared.getChatHistory(analysisResultId: ar.analysisResultId) {
+                        let msgs: [(role: String, content: String, adjustments: [PlanAdjustment]?)] = hist.messages.map { m in
+                            (role: m.role, content: m.content, adjustments: m.adjustments)
+                        }
+                        if !msgs.isEmpty {
+                            await MainActor.run { chatMessages = msgs }
+                        }
+                    }
+                }
             }
         }()
         

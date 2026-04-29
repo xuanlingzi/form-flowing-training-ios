@@ -331,6 +331,10 @@ final class APIService: @unchecked Sendable {
         )
     }
     
+    func getChatHistory(analysisResultId: Int) async throws -> ChatHistoryResponse {
+        return try await request("/analysis/\(analysisResultId)/chat-history")
+    }
+    
     // MARK: - 训练计划
     
     func getTrainingPlans() async throws -> TrainingPlanListResponse {
