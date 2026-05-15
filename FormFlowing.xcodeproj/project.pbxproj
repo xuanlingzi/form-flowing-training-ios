@@ -16,10 +16,10 @@
 		5A2715F53F2358A42218CB0B /* GarminLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A6F83DBDEABFC47D494F8D4 /* GarminLocalization.swift */; };
 		5E589485A6A36B441853F307 /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C0C54459BB0A273CF8A037 /* TrainingView.swift */; };
 		8A31FED933F67F9A2A9ACDF7 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA582F4EFB4086DA5F50C141 /* APIService.swift */; };
-		CACH00020000000000000000 /* CacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACH00010000000000000000 /* CacheService.swift */; };
 		8BC5264A0AEDB5F2942FEF49 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1284971F48863E4C1CDDA4 /* AuthManager.swift */; };
 		BBD75F5155116BD4E9CEE01D /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC87358F2FE20B8ADBA406CF /* HomeView.swift */; };
 		BDF05C45C34C76B81BB26C52 /* ActivitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9C57982965E1564AE86877 /* ActivitiesView.swift */; };
+		CACH00020000000000000000 /* CacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACH00010000000000000000 /* CacheService.swift */; };
 		CD12CA3B06169C08C50C46C3 /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121B668293585F36751DE1C0 /* MemoryView.swift */; };
 		CD49F78E6BCCB197A1B550D7 /* MarkdownTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152DDE81B2D0426FC1633D0F /* MarkdownTextView.swift */; };
 		CFE5AE6735A26869FD7B043B /* FormFlowingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E073ABC0343DAB02AB97464 /* FormFlowingApp.swift */; };
