@@ -272,7 +272,7 @@ struct ActivityDetailView: View {
     
     @ViewBuilder
     func aiSection(_ analysis: AnalysisResult) -> some View {
-        let isPro = analysis.tier == "pro"
+        let isPro = analysis.tier != nil && analysis.tier != "fast"
         let modelStr = analysis.modelUsed
             .flatMap { modelUsed in
                 guard !modelUsed.isEmpty else { return nil }
@@ -338,7 +338,8 @@ struct ActivityDetailView: View {
     // MARK: - Analyze Button
     
     private var hasProAnalysis: Bool {
-        analysis?.tier == "pro"
+        guard let t = analysis?.tier else { return false }
+        return t != "fast"
     }
     
     private var hasFastOnly: Bool {

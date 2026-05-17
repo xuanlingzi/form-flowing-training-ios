@@ -264,7 +264,8 @@ struct ActivityCard: View {
                 Spacer()
                 
                 if let tier = activity.analysisTier {
-                    PillBadge(text: tier == "pro" ? "PRO" : "FAST", color: tier == "pro" ? .purple : .teal)
+                    let isPro = tier != "fast"
+                    PillBadge(text: isPro ? "PRO" : "FAST", color: isPro ? .purple : .teal)
                 }
                 
                 Image(systemName: "chevron.right")
