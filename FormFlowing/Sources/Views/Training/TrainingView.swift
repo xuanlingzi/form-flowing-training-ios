@@ -49,6 +49,10 @@ struct GeneratePlanForm {
     var startDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     var goalDetail: [String: String] = [:]
     var extraRequirements = ""
+    // Goal-driven mode
+    var mode: String = "fixed"  // "fixed" | "goal_driven"
+    var targetDate: Date? = nil
+    var microCycleDays: Int = 7
 }
 
 // MARK: - Main View
@@ -87,6 +91,14 @@ struct TrainingView: View {
     @State private var generating = false
     @State private var pollingTask: Task<Void, Never>?
     @State private var scrollOffset: CGFloat = 0
+    
+    // 目标驱动计划
+    @State private var showProgressSheet = false
+    @State private var progressData: PlanProgressResponse?
+    @State private var loadingProgress = false
+    @State private var showExtendAlert = false
+    @State private var showReviewAlert = false
+    @State private var planBlocks: [Int: [TrainingPlanBlock]] = [:]
     
     private var collapseProgress: CGFloat {
         min(max(scrollOffset / 60, 0), 1)
@@ -165,6 +177,28 @@ struct TrainingView: View {
                         .lineLimit(1)
                     
                     Spacer(minLength: 16)
+                    
+                    // 目标驱动计划操作按钮
+                    if let plan = selectedPlan ?? plans.first(where: { $0.status == "active" }),
+                       plan.mode == "goal_driven" {
+                        HStack(spacing: 12) {
+                            Button(action: { loadProgress(planId: plan.trainingPlanId) }) {
+                                Text("进度")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.teal)
+                            }
+                            Button(action: { showExtendAlert = true }) {
+                                Text("续期")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.orange)
+                            }
+                            Button(action: { showReviewAlert = true }) {
+                                Text("复盘")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.purple)
+                            }
+                        }
+                    }
                     
                     if !plans.isEmpty {
                         Button(action: { showPlanDetailsSheet = true }) {
@@ -394,7 +428,7 @@ struct TrainingView: View {
 
                                         ForEach(plans) { item in
                                             planSelectionRow(
-                                                title: item.planName,
+                                                title: (item.mode == "goal_driven" ? "🎯 " : "") + item.planName,
                                                 isSelected: selectedPlan?.trainingPlanId == item.trainingPlanId,
                                                 action: {
                                                     selectedPlan = item
@@ -655,6 +689,34 @@ struct TrainingView: View {
                     }
                     .presentationDetents([.large])
                 }
+            }
+            .sheet(isPresented: $showProgressSheet) {
+                GoalPlanProgressSheet(
+                    progressData: progressData,
+                    loading: loadingProgress
+                )
+                .presentationDetents([.fraction(0.75), .large])
+                .presentationDragIndicator(.visible)
+            }
+            .alert("续期 — 生成下一周期", isPresented: $showExtendAlert) {
+                Button("确定") {
+                    if let plan = selectedPlan ?? plans.first(where: { $0.mode == "goal_driven" }) {
+                        extendBlock(plan)
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("将根据当前进度和训练反馈，自动生成下一个训练周期的课程。")
+            }
+            .alert("复盘当前周期", isPresented: $showReviewAlert) {
+                Button("开始复盘") {
+                    if let plan = selectedPlan ?? plans.first(where: { $0.mode == "goal_driven" }) {
+                        reviewCurrentPlan(plan)
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("AI 将对当前周期的训练执行情况进行分析，更新进度评估。")
             }
             }
         }
@@ -1080,37 +1142,79 @@ struct TrainingView: View {
         ]
         goal.merge(buildTrainingGoalDetails(from: form)) { _, new in new }
         
-        var req: [String: Any] = [
-            "duration_weeks": Int(form.weeks),
-            "start_date": startDate,
-            "training_goal": form.goal
-        ]
-        req["extra_requirements"] = buildExtraRequirements(from: form)
-        
-        let oldPlanId = selectedPlan?.trainingPlanId
-        
-        Task {
-            if let oldId = oldPlanId {
-                try? await APIService.shared.deletePlan(planId: oldId)
-                await MainActor.run {
-                    self.selectedPlan = nil
-                    self.workouts = []
-                    self.workoutsByPlan = [:]
-                    self.workoutPlanMetaByWorkoutId = [:]
-                    self.plans.removeAll { $0.trainingPlanId == oldId }
+        if form.mode == "goal_driven" {
+            // Goal-driven plan flow
+            var req: [String: Any] = [
+                "goal_kind": form.goal,
+                "start_date": startDate,
+                "micro_cycle_days": form.microCycleDays,
+            ]
+            if let targetDate = form.targetDate {
+                req["target_date"] = f.string(from: targetDate)
+            }
+            req["goal_metrics"] = buildTrainingGoalDetails(from: form)
+            req["extra_requirements"] = buildExtraRequirements(from: form)
+            
+            let oldPlanId = selectedPlan?.trainingPlanId
+            
+            Task {
+                if let oldId = oldPlanId {
+                    try? await APIService.shared.deletePlan(planId: oldId)
+                    await MainActor.run {
+                        self.selectedPlan = nil
+                        self.workouts = []
+                        self.workoutsByPlan = [:]
+                        self.workoutPlanMetaByWorkoutId = [:]
+                        self.plans.removeAll { $0.trainingPlanId == oldId }
+                    }
+                }
+                
+                do {
+                    try await APIService.shared.saveTrainingGoal(goal: goal)
+                    _ = try await APIService.shared.startGoalPlan(req: req)
+                    await MainActor.run {
+                        showGenSheet = false
+                        showPlanRegenerateSheet = false
+                    }
+                    startPolling(oldPlanId: oldPlanId)
+                } catch {
+                    await MainActor.run { generating = false }
                 }
             }
+        } else {
+            // Fixed plan flow (existing)
+            var req: [String: Any] = [
+                "duration_weeks": Int(form.weeks),
+                "start_date": startDate,
+                "training_goal": form.goal
+            ]
+            req["extra_requirements"] = buildExtraRequirements(from: form)
             
-            do {
-                try await APIService.shared.saveTrainingGoal(goal: goal)
-                try await APIService.shared.generateTrainingPlan(req: req)
-                await MainActor.run {
-                    showGenSheet = false
-                    showPlanRegenerateSheet = false
+            let oldPlanId = selectedPlan?.trainingPlanId
+            
+            Task {
+                if let oldId = oldPlanId {
+                    try? await APIService.shared.deletePlan(planId: oldId)
+                    await MainActor.run {
+                        self.selectedPlan = nil
+                        self.workouts = []
+                        self.workoutsByPlan = [:]
+                        self.workoutPlanMetaByWorkoutId = [:]
+                        self.plans.removeAll { $0.trainingPlanId == oldId }
+                    }
                 }
-                startPolling(oldPlanId: oldPlanId)
-            } catch {
-                await MainActor.run { generating = false }
+                
+                do {
+                    try await APIService.shared.saveTrainingGoal(goal: goal)
+                    try await APIService.shared.generateTrainingPlan(req: req)
+                    await MainActor.run {
+                        showGenSheet = false
+                        showPlanRegenerateSheet = false
+                    }
+                    startPolling(oldPlanId: oldPlanId)
+                } catch {
+                    await MainActor.run { generating = false }
+                }
             }
         }
     }
@@ -1258,6 +1362,49 @@ struct TrainingView: View {
             }
             if !Task.isCancelled {
                 await MainActor.run { self.generating = false }
+            }
+        }
+    }
+    
+    // MARK: - Goal-Driven Plan Actions
+    
+    private func loadProgress(planId: Int) {
+        loadingProgress = true
+        showProgressSheet = true
+        Task {
+            do {
+                let resp = try await APIService.shared.getPlanProgress(planId: planId)
+                await MainActor.run {
+                    progressData = resp
+                    loadingProgress = false
+                }
+            } catch {
+                await MainActor.run { loadingProgress = false }
+            }
+        }
+    }
+    
+    private func extendBlock(_ plan: TrainingPlan) {
+        generating = true
+        Task {
+            do {
+                _ = try await APIService.shared.extendBlock(planId: plan.trainingPlanId)
+                startPolling(oldPlanId: nil)
+            } catch {
+                await MainActor.run { generating = false }
+            }
+        }
+    }
+    
+    private func reviewCurrentPlan(_ plan: TrainingPlan) {
+        generating = true
+        Task {
+            do {
+                _ = try await APIService.shared.reviewPlan(planId: plan.trainingPlanId)
+                await loadData()
+                await MainActor.run { generating = false }
+            } catch {
+                await MainActor.run { generating = false }
             }
         }
     }
@@ -1737,6 +1884,22 @@ struct GeneratePlanSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    // 计划模式
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("计划模式").font(.headline)
+                        Picker("模式", selection: $form.mode) {
+                            Text("固定周期").tag("fixed")
+                            Text("目标驱动").tag("goal_driven")
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        if form.mode == "goal_driven" {
+                            Text("🎯 目标驱动模式：AI 按周期滚动生成课程，持续追踪进度并自动调整")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
                     // 运动类型
                     VStack(alignment: .leading, spacing: 8) {
                         Text("运动类型").font(.headline)
@@ -1882,8 +2045,49 @@ struct GeneratePlanSheet: View {
                         .environment(\.locale, Locale(identifier: "zh_CN"))
                         .environment(\.calendar, Calendar(identifier: .gregorian))
                     }
-                    
-                    // TSS 预设
+
+                    if form.mode == "goal_driven" {
+                        // 目标驱动：目标日期 + 微周期天数
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("目标日期").font(.headline)
+                            DatePicker(
+                                "目标日期",
+                                selection: Binding(
+                                    get: { form.targetDate ?? Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date() },
+                                    set: { form.targetDate = $0 }
+                                ),
+                                in: Date()...,
+                                displayedComponents: .date
+                            )
+                            .datePickerStyle(.compact)
+                            .labelsHidden()
+                            .environment(\.locale, Locale(identifier: "zh_CN"))
+                            .environment(\.calendar, Calendar(identifier: .gregorian))
+                            Text("AI 将根据目标日期规划整体周期")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("微周期天数").font(.headline)
+                                Spacer()
+                                Text("\(form.microCycleDays) 天").font(.subheadline.weight(.bold)).foregroundColor(.teal)
+                            }
+                            Picker("微周期", selection: $form.microCycleDays) {
+                                Text("5 天").tag(5)
+                                Text("7 天").tag(7)
+                                Text("10 天").tag(10)
+                                Text("14 天").tag(14)
+                            }
+                            .pickerStyle(.segmented)
+                            Text("每个微周期结束后可复盘并续期")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        // 固定模式：周训练量 + 周数
+                        // TSS 预设
                     VStack(alignment: .leading, spacing: 8) {
                         Text("周训练量").font(.headline)
                         HStack(spacing: 8) {
@@ -1917,6 +2121,7 @@ struct GeneratePlanSheet: View {
                         }
                         Slider(value: $form.weeks, in: 1...12, step: 1).tint(.teal)
                     }
+                    } // end else (fixed mode)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("其他要求").font(.headline)
@@ -2072,5 +2277,235 @@ struct GeneratePlanSheet: View {
         .padding(12)
         .background(Color(UIColor.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+// MARK: - Goal Plan Progress Sheet
+
+struct GoalPlanProgressSheet: View {
+    let progressData: PlanProgressResponse?
+    let loading: Bool
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    private let assessmentLabels: [String: (label: String, color: Color)] = [
+        "on_track": ("按计划进行", .green),
+        "ahead": ("超前进度", .teal),
+        "behind": ("落后进度", .orange),
+        "infeasible": ("需调整目标", .red),
+    ]
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                if loading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("加载进度数据...")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+                } else if let data = progressData {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // 目标信息
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("训练目标").font(.headline)
+                            HStack(spacing: 12) {
+                                if let goalKind = data.goalKind {
+                                    Label(goalKind, systemImage: "target")
+                                        .font(.subheadline)
+                                }
+                                if let targetDate = data.targetDate {
+                                    Label(targetDate, systemImage: "calendar")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(14)
+                        
+                        // 进度评估
+                        if let progress = data.progressState {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("进度评估").font(.headline)
+                                    Spacer()
+                                    if let assessment = progress.targetAssessment,
+                                       let info = assessmentLabels[assessment] {
+                                        Text(info.label)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 4)
+                                            .background(info.color)
+                                            .cornerRadius(8)
+                                    }
+                                }
+                                
+                                if let summary = progress.summary {
+                                    Text(summary)
+                                        .font(.subheadline)
+                                        .foregroundColor(.primary)
+                                        .lineSpacing(4)
+                                }
+                                
+                                if let focus = progress.nextFocus {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.forward.circle.fill")
+                                            .foregroundColor(.teal)
+                                        Text("下一步重点：\(focus)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(14)
+                        }
+                        
+                        // 统计
+                        if let stats = data.stats {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("统计概览").font(.headline)
+                                HStack(spacing: 20) {
+                                    statItem(value: "\(stats.completedBlocks ?? 0)/\(stats.totalBlocks ?? 0)", label: "已完成周期")
+                                    statItem(value: "\(stats.totalWorkouts ?? 0)", label: "总课程数")
+                                    statItem(value: "\(stats.pushedWorkouts ?? 0)", label: "已推送")
+                                }
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(14)
+                        }
+                        
+                        // 当前活跃 Block
+                        if let block = data.activeBlock {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("当前周期").font(.headline)
+                                    Spacer()
+                                    Text("Block \(block.blockIndex + 1)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(.teal)
+                                }
+                                if let theme = block.theme {
+                                    Text(theme).font(.subheadline.weight(.semibold))
+                                }
+                                if let focus = block.focus {
+                                    Text(focus).font(.caption).foregroundColor(.secondary)
+                                }
+                                if let start = block.blockStartDate, let end = block.blockEndDate {
+                                    Text("\(start) ~ \(end)")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                }
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(14)
+                        }
+                        
+                        // Block 时间线
+                        if let blocks = data.blocks, !blocks.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("周期时间线").font(.headline)
+                                ForEach(blocks) { block in
+                                    blockTimelineRow(block: block)
+                                }
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(14)
+                        }
+                        
+                        // 下次复盘
+                        if let nextReview = data.nextReviewAt {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock.badge.checkmark")
+                                    .foregroundColor(.purple)
+                                Text("下次复盘：\(nextReview)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding()
+                } else {
+                    Text("暂无进度数据")
+                        .foregroundColor(.secondary)
+                        .padding(.top, 80)
+                }
+            }
+            .background(Color(UIColor.systemGroupedBackground))
+            .navigationTitle("训练进度")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    private func statItem(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.primary)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private func blockTimelineRow(block: TrainingPlanBlock) -> some View {
+        let statusColors: [String: Color] = [
+            "active": .teal,
+            "completed": .green,
+            "planned": .gray,
+            "skipped": .orange,
+        ]
+        let statusLabels: [String: String] = [
+            "active": "进行中",
+            "completed": "已完成",
+            "planned": "待开始",
+            "skipped": "已跳过",
+        ]
+        
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(statusColors[block.status] ?? .gray)
+                .frame(width: 8, height: 8)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("Block \(block.blockIndex + 1)")
+                        .font(.caption.weight(.semibold))
+                    if let theme = block.theme {
+                        Text("· \(theme)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text(statusLabels[block.status] ?? block.status)
+                        .font(.caption2)
+                        .foregroundColor(statusColors[block.status] ?? .gray)
+                }
+                if let start = block.blockStartDate, let end = block.blockEndDate {
+                    Text("\(start) ~ \(end)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }

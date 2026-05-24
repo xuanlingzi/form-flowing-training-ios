@@ -435,6 +435,26 @@ final class APIService: @unchecked Sendable {
     func generateTrainingPlan(req: [String: Any]) async throws {
         try await requestVoid("/training/plan/generate", method: "POST", body: req, timeout: 120)
     }
+    
+    // MARK: - 目标驱动计划
+    
+    func startGoalPlan(req: [String: Any]) async throws -> GoalPlanResponse {
+        return try await request("/training/plan/goal", method: "POST", body: req, timeout: 120)
+    }
+    
+    func extendBlock(planId: Int, extraRequirements: String? = nil) async throws -> ExtendBlockResponse {
+        let body: [String: Any]? = extraRequirements != nil ? ["extra_requirements": extraRequirements!] : nil
+        return try await request("/training/plan/\(planId)/extend", method: "POST", body: body)
+    }
+    
+    func reviewPlan(planId: Int, notes: String? = nil) async throws -> ReviewPlanResponse {
+        let body: [String: Any]? = notes != nil ? ["notes": notes!] : nil
+        return try await request("/training/plan/\(planId)/review", method: "POST", body: body, timeout: 120)
+    }
+    
+    func getPlanProgress(planId: Int) async throws -> PlanProgressResponse {
+        return try await request("/training/plan/\(planId)/progress")
+    }
 
     // MARK: - 订阅
 

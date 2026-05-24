@@ -361,6 +361,15 @@ struct TrainingPlan: Codable, Identifiable, Sendable {
     let status: String?
     let durationWeeks: Int?
     let createdAt: String?
+    // Goal-driven plan fields
+    let mode: String?  // "fixed" | "goal_driven"
+    let goalKind: String?
+    let goalMetrics: [String: AnyCodableValue]?
+    let targetDate: String?
+    let microCycleDays: Int?
+    let currentBlockIndex: Int?
+    let nextReviewAt: String?
+    let progressState: PlanProgressState?
 }
 
 struct TrainingPlanListResponse: Codable, Sendable {
@@ -369,12 +378,14 @@ struct TrainingPlanListResponse: Codable, Sendable {
 
 struct TrainingPlanDetailResponse: Codable, Sendable {
     let plan: TrainingPlan
+    let blocks: [TrainingPlanBlock]?
     let workouts: [Workout]
 }
 
 struct Workout: Codable, Identifiable, Sendable {
     var id: Int { trainingPlanWorkoutId }
     let trainingPlanWorkoutId: Int
+    let trainingPlanBlockId: Int?
     let workoutDate: String?
     let workoutName: String?
     let sport: String?
@@ -430,6 +441,73 @@ struct MemoryItem: Codable, Identifiable, Sendable {
 
 struct MemoryListResponse: Codable, Sendable {
     let memories: [MemoryItem]
+}
+
+// MARK: - Goal-Driven Plan
+
+struct PlanProgressState: Codable, Sendable {
+    let assessedAt: String?
+    let summary: String?
+    let metrics: [String: AnyCodableValue]?
+    let targetAssessment: String?  // on_track | ahead | behind | infeasible
+    let nextFocus: String?
+}
+
+struct TrainingPlanBlock: Codable, Identifiable, Sendable {
+    var id: Int { trainingPlanBlockId ?? blockIndex }
+    let trainingPlanBlockId: Int?
+    let blockIndex: Int
+    let blockStartDate: String?
+    let blockEndDate: String?
+    let status: String  // planned | active | completed | skipped
+    let theme: String?
+    let focus: String?
+    let rationale: String?
+    let reviewSummary: String?
+    let reviewedAt: String?
+}
+
+struct GoalPlanResponse: Codable, Sendable {
+    let message: String
+    let trainingPlanId: Int
+    let queueId: Int
+}
+
+struct ExtendBlockResponse: Codable, Sendable {
+    let message: String
+    let queueId: Int?
+    let nextBlockIndex: Int?
+    let nextBlockStart: String?
+    let nextBlockEnd: String?
+    let planStatus: String?
+}
+
+struct ReviewPlanResponse: Codable, Sendable {
+    let message: String
+    let queueId: Int
+}
+
+struct PlanProgressResponse: Codable, Sendable {
+    let trainingPlanId: Int
+    let planName: String
+    let goalKind: String?
+    let goalMetrics: [String: AnyCodableValue]?
+    let targetDate: String?
+    let status: String?
+    let currentBlockIndex: Int?
+    let nextReviewAt: String?
+    let progressState: PlanProgressState?
+    let stats: PlanStats?
+    let activeBlock: TrainingPlanBlock?
+    let blocks: [TrainingPlanBlock]?
+}
+
+struct PlanStats: Codable, Sendable {
+    let totalBlocks: Int?
+    let completedBlocks: Int?
+    let activeBlockIndex: Int?
+    let totalWorkouts: Int?
+    let pushedWorkouts: Int?
 }
 
 // MARK: - Training Goal
