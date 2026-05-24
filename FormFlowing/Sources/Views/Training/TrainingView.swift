@@ -1495,11 +1495,44 @@ private let stepLabels: [String: String] = [
     "cooldown": "缓和", "cool_down": "缓和",
 ]
 
+private let strengthCategoryLabels: [String: String] = [
+    "SQUAT": "深蹲类", "LUNGE": "弓步/分腿蹲", "DEADLIFT": "硬拉",
+    "HIP_RAISE": "髋桥/臀冲", "HIP_SWING": "髋部摆动",
+    "CALF_RAISE": "提踵", "LEG_CURL": "腿弯举",
+    "HYPEREXTENSION": "背伸", "BENCH_PRESS": "卧推",
+    "PUSH_UP": "俯卧撑", "SHOULDER_PRESS": "肩部推举",
+    "PULL_UP": "引体/下拉", "ROW": "划船",
+    "LATERAL_RAISE": "侧平举", "FLYE": "飞鸟",
+    "SHRUG": "耸肩", "CURL": "二头弯举",
+    "TRICEPS_EXTENSION": "三头臂屈伸", "PLANK": "平板支撑",
+    "CRUNCH": "卷腹", "SIT_UP": "仰卧起坐",
+    "LEG_RAISE": "举腿", "CORE": "核心稳定",
+    "HIP_STABILITY": "髋稳定", "PLYO": "爆发力",
+    "TOTAL_BODY": "全身复合", "OLYMPIC_LIFT": "举重",
+    "CARRY": "负重行走", "WARM_UP": "热身/拉伸",
+    "BANDED_EXERCISES": "弹力带", "SUSPENSION": "悬挂训练",
+    "BATTLE_ROPE": "战绳",
+]
+
 struct StepCardView: View {
     let step: WorkoutStep
     
     var color: Color { stepColors[step.type] ?? .gray }
     var label: String { stepLabels[step.type] ?? step.type }
+    
+    /// 是否为力量训练步骤
+    private var isStrength: Bool {
+        step.type == "active" &&
+        (step.exerciseName != nil || step.exerciseCategory != nil || step.reps != nil || step.weightValue != nil || step.isTimed == true)
+    }
+    
+    /// 是否为紧凑型休息（无功率/心率/踏频目标）
+    private var isCompactRest: Bool {
+        (step.type == "rest" || step.type == "recovery") &&
+        step.powerLow == nil && step.powerHigh == nil &&
+        step.hrLow == nil && step.hrHigh == nil &&
+        step.cadenceLow == nil && step.cadenceHigh == nil
+    }
     
     var body: some View {
         if step.type == "repeat", let subs = step.steps, !subs.isEmpty {
@@ -1520,55 +1553,158 @@ struct StepCardView: View {
             .background(Color(UIColor.systemGray6))
             .cornerRadius(10)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
+        } else if isStrength {
+            strengthStepView
+        } else if isCompactRest {
+            compactRestView
         } else {
-            // 单步骤
-            HStack(spacing: 0) {
-                Rectangle().fill(color).frame(width: 3)
+            enduranceStepView
+        }
+    }
+    
+    // MARK: - 力量训练步骤
+    private var strengthStepView: some View {
+        let name = step.displayName ?? step.description ?? step.exerciseName ?? "力量动作"
+        let categoryLabel = step.exerciseCategory.flatMap { strengthCategoryLabels[$0] }
+        let isTimed = step.isTimed ?? (step.durationSec != nil && step.reps == nil)
+        
+        return HStack(spacing: 0) {
+            Rectangle().fill(Color.purple).frame(width: 3)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                // 动作名称行
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(name)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.primary)
+                    if let cat = categoryLabel {
+                        Text(cat)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(step.description ?? label)
-                        .font(.caption).foregroundColor(.secondary)
-                    
-                    HStack(spacing: 16) {
-                        // 时长
+                // 三栏指标
+                HStack(spacing: 16) {
+                    if isTimed {
+                        // 计时型：单组时长
                         VStack(alignment: .leading, spacing: 1) {
                             Text(step.durationSec.map { formatSeconds($0) } ?? "-")
                                 .font(.system(size: 14, weight: .bold))
-                            Text("时长").font(.system(size: 9)).foregroundColor(.secondary)
+                            Text("单组时长").font(.system(size: 9)).foregroundColor(.secondary)
                         }
-                        
-                        // 功率
+                    } else {
+                        // 次数型：每组次数
                         VStack(alignment: .leading, spacing: 1) {
-                            if let lo = step.powerLow, let hi = step.powerHigh {
-                                Text("\(lo)-\(hi) W").font(.system(size: 14, weight: .bold))
-                            } else {
-                                Text("-").font(.system(size: 14, weight: .bold))
-                            }
-                            Text("功率").font(.system(size: 9)).foregroundColor(.secondary)
+                            Text(step.reps.map { "\($0) 次" } ?? "-")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("每组次数").font(.system(size: 9)).foregroundColor(.secondary)
                         }
-                        
-                        // 踏频/心率
+                    }
+                    
+                    // 负重
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let w = step.weightValue, w > 0 {
+                            Text("\(String(format: w.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", w)) kg")
+                                .font(.system(size: 14, weight: .bold))
+                        } else {
+                            Text("自重")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.secondary)
+                        }
+                        Text("负重").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                    
+                    // 次数型的补充时长
+                    if !isTimed {
                         VStack(alignment: .leading, spacing: 1) {
-                            if let lo = step.cadenceLow, let hi = step.cadenceHigh {
-                                Text("\(lo)-\(hi) rpm").font(.system(size: 14, weight: .bold))
-                            } else if let lo = step.hrLow, let hi = step.hrHigh {
-                                Text("\(lo)-\(hi) bpm").font(.system(size: 14, weight: .bold))
-                            } else {
-                                Text("-").font(.system(size: 14, weight: .bold))
-                            }
-                            Text("踏频/HR").font(.system(size: 9)).foregroundColor(.secondary)
+                            Text(step.durationSec.map { formatSeconds($0) } ?? "-")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(step.durationSec != nil ? .primary : Color(UIColor.systemGray3))
+                            Text("单组时长").font(.system(size: 9)).foregroundColor(.secondary)
                         }
                     }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white)
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
+    }
+    
+    // MARK: - 紧凑型休息
+    private var compactRestView: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(Color.blue).frame(width: 3)
+            
+            HStack {
+                Text(step.description ?? "休息")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(step.durationSec.map { formatSeconds($0) } ?? "-")
+                    .font(.system(size: 14, weight: .bold))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
+    }
+    
+    // MARK: - 耐力训练步骤（骑行/跑步/游泳）
+    private var enduranceStepView: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(color).frame(width: 3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(step.description ?? label)
+                    .font(.caption).foregroundColor(.secondary)
+                
+                HStack(spacing: 16) {
+                    // 时长
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(step.durationSec.map { formatSeconds($0) } ?? "-")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("时长").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                    
+                    // 功率
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let lo = step.powerLow, let hi = step.powerHigh {
+                            Text("\(lo)-\(hi) W").font(.system(size: 14, weight: .bold))
+                        } else {
+                            Text("-").font(.system(size: 14, weight: .bold))
+                        }
+                        Text("功率").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                    
+                    // 踏频/心率
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let lo = step.cadenceLow, let hi = step.cadenceHigh {
+                            Text("\(lo)-\(hi) rpm").font(.system(size: 14, weight: .bold))
+                        } else if let lo = step.hrLow, let hi = step.hrHigh {
+                            Text("\(lo)-\(hi) bpm").font(.system(size: 14, weight: .bold))
+                        } else {
+                            Text("-").font(.system(size: 14, weight: .bold))
+                        }
+                        Text("踏频/HR").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
     }
     
     private func formatSeconds(_ sec: Int) -> String {

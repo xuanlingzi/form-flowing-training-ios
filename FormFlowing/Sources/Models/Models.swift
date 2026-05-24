@@ -401,6 +401,19 @@ struct WorkoutStep: Codable, Sendable {
     let description: String?
     let count: Int?
     let steps: [WorkoutStep]?
+    // 力量训练专用字段
+    let exerciseName: String?
+    let exerciseCategory: String?
+    let weightValue: Double?
+    let reps: Int?
+    let displayName: String?  // 后端注入的中文动作名
+    let isTimed: Bool?  // 计时型动作标记
+    // 游泳/跑步配速
+    let paceLowSec: Int?
+    let paceHighSec: Int?
+    let strokeType: String?
+    let drillType: String?
+    let equipmentType: String?
 }
 
 struct MemoryItem: Codable, Identifiable, Sendable {
