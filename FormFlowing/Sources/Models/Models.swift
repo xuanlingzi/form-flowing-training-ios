@@ -459,7 +459,7 @@ struct TrainingPlanBlock: Codable, Identifiable, Sendable {
     let blockIndex: Int
     let blockStartDate: String?
     let blockEndDate: String?
-    let status: String  // planned | active | completed | skipped
+    let status: String?  // planned | active | completed | skipped
     let theme: String?
     let focus: String?
     let rationale: String?

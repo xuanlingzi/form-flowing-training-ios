@@ -2482,7 +2482,7 @@ struct GoalPlanProgressSheet: View {
         
         return HStack(spacing: 10) {
             Circle()
-                .fill(statusColors[block.status] ?? .gray)
+                .fill(statusColors[block.status ?? "planned"] ?? .gray)
                 .frame(width: 8, height: 8)
             
             VStack(alignment: .leading, spacing: 2) {
@@ -2495,9 +2495,9 @@ struct GoalPlanProgressSheet: View {
                             .foregroundColor(.secondary)
                     }
                     Spacer()
-                    Text(statusLabels[block.status] ?? block.status)
+                    Text(statusLabels[block.status ?? "planned"] ?? block.status ?? "planned")
                         .font(.caption2)
-                        .foregroundColor(statusColors[block.status] ?? .gray)
+                        .foregroundColor(statusColors[block.status ?? "planned"] ?? .gray)
                 }
                 if let start = block.blockStartDate, let end = block.blockEndDate {
                     Text("\(start) ~ \(end)")
