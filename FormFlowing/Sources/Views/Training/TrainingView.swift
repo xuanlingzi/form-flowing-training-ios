@@ -38,6 +38,68 @@ private let weekdayKeys: [(key: Int, label: String, full: String)] = [
     (4, "四", "周四"), (5, "五", "周五"), (6, "六", "周六"), (7, "日", "周日"),
 ]
 
+/// 将 goal_kind key 转换为用户可读的中文标签
+private func goalKindLabel(_ key: String?) -> String {
+    guard let key else { return "未设置" }
+    if let match = trainingGoals.first(where: { $0.key == key }) {
+        return "\(match.icon) \(match.label)"
+    }
+    return key
+}
+
+/// 将计划 description（可能是原始 JSON 字典）格式化为可读文本
+private func formatPlanDescription(_ plan: TrainingPlan) -> String? {
+    // 如果是目标驱动计划，生成结构化描述
+    if plan.mode == "goal_driven" {
+        var lines: [String] = []
+        lines.append("🎯 目标驱动滚动计划")
+        if let goalKind = plan.goalKind {
+            let label = trainingGoals.first(where: { $0.key == goalKind })?.label ?? goalKind
+            lines.append("训练目标：\(label)")
+        }
+        if let targetDate = plan.targetDate {
+            lines.append("目标日期：\(targetDate)")
+        }
+        if let microCycle = plan.microCycleDays {
+            lines.append("微周期：\(microCycle) 天")
+        }
+        return lines.joined(separator: "\n")
+    }
+    
+    guard let desc = plan.description else { return nil }
+    
+    // 如果 description 看起来是原始字典格式（包含 key: value 模式），尝试格式化
+    if desc.contains("current_ftp:") || desc.contains("target_ftp:") ||
+       desc.contains("sports:") || desc.contains("train_days:") {
+        // 原始格式，尝试提取关键信息
+        var lines: [String] = []
+        if let goalKind = plan.goalKind ?? extractValue(from: desc, key: "目标") {
+            let label = trainingGoals.first(where: { $0.key == goalKind })?.label ?? goalKind
+            lines.append("训练目标：\(label)")
+        }
+        // 提取 FTP 信息
+        if let currentFtp = extractValue(from: desc, key: "current_ftp") {
+            lines.append("当前 FTP：\(currentFtp)W")
+        }
+        if let targetFtp = extractValue(from: desc, key: "target_ftp") {
+            lines.append("目标 FTP：\(targetFtp)W")
+        }
+        if !lines.isEmpty {
+            return lines.joined(separator: "\n")
+        }
+    }
+    
+    return desc
+}
+
+private func extractValue(from text: String, key: String) -> String? {
+    let pattern = "\(key):\\s*([^;\\]]+)"
+    guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+    let match = String(text[range])
+    let value = match.split(separator: ":").dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces)
+    return value.isEmpty ? nil : value
+}
+
 struct GeneratePlanForm {
     var goal = "ftp_improvement"
     var sports: Set<String> = ["cycling"]
@@ -466,7 +528,7 @@ struct TrainingView: View {
 
                                 Divider()
 
-                                if let desc = detailPlan.description {
+                                if let desc = formatPlanDescription(detailPlan) {
                                     Text(desc)
                                         .font(.system(size: 15))
                                         .foregroundColor(.primary)
@@ -2313,7 +2375,7 @@ struct GoalPlanProgressSheet: View {
                             Text("训练目标").font(.headline)
                             HStack(spacing: 12) {
                                 if let goalKind = data.goalKind {
-                                    Label(goalKind, systemImage: "target")
+                                    Label(goalKindLabel(goalKind), systemImage: "target")
                                         .font(.subheadline)
                                 }
                                 if let targetDate = data.targetDate {
