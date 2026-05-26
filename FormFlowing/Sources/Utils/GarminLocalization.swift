@@ -93,6 +93,12 @@ struct GarminLocalization {
             "AEROBIC_LOW_SURPLUS": "低强度有氧负荷过多",
             "AEROBIC_HIGH_SURPLUS": "高强度有氧负荷过多",
             "ANAEROBIC_SURPLUS": "无氧负荷过多",
+            "AEROBIC_LOW_FOCUS": "偏重低强度有氧",
+            "AEROBIC_HIGH_FOCUS": "偏重高强度有氧",
+            "ANAEROBIC_FOCUS": "偏重无氧训练",
+            "UNBALANCED_AEROBIC_LOW_FOCUS": "负荷不均衡：偏重低强度有氧",
+            "UNBALANCED_AEROBIC_HIGH_FOCUS": "负荷不均衡：偏重高强度有氧",
+            "UNBALANCED_ANAEROBIC_FOCUS": "负荷不均衡：偏重无氧",
         ]
         return map[s] ?? s
     }
