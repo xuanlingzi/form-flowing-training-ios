@@ -164,6 +164,7 @@ struct TrainingView: View {
     
     // 每日训练建议
     @State private var dailyCheck: DailyCheckItem? = nil
+    @State private var dailyCheckExpanded = false
     
     private var collapseProgress: CGFloat {
         min(max(scrollOffset / 60, 0), 1)
@@ -1508,10 +1509,26 @@ struct TrainingView: View {
                 // 显示第一行之后的内容（第一行是 action）
                 let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
                 let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                Text(body.isEmpty ? rec : body)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                    .lineLimit(4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(body.isEmpty ? rec : body)
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary)
+                        .lineLimit(dailyCheckExpanded ? nil : 4)
+                    
+                    if !dailyCheckExpanded {
+                        Button(action: { withAnimation { dailyCheckExpanded = true } }) {
+                            Text("展开全部")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.teal)
+                        }
+                    } else {
+                        Button(action: { withAnimation { dailyCheckExpanded = false } }) {
+                            Text("收起")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.teal)
+                        }
+                    }
+                }
             }
             
             HStack(spacing: 12) {
