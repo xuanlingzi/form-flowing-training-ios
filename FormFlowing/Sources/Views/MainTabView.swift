@@ -5,10 +5,19 @@ struct TabBarVisibleKey: EnvironmentKey {
     static let defaultValue: Binding<Bool> = .constant(true)
 }
 
+/// 控制 Tab 切换的环境键
+struct SelectedTabKey: EnvironmentKey {
+    static let defaultValue: Binding<Int> = .constant(0)
+}
+
 extension EnvironmentValues {
     var tabBarVisible: Binding<Bool> {
         get { self[TabBarVisibleKey.self] }
         set { self[TabBarVisibleKey.self] = newValue }
+    }
+    var selectedTab: Binding<Int> {
+        get { self[SelectedTabKey.self] }
+        set { self[SelectedTabKey.self] = newValue }
     }
 }
 
@@ -61,6 +70,7 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, tabBarVisible ? 50 : 0)
             .environment(\.tabBarVisible, $tabBarVisible)
+            .environment(\.selectedTab, $selectedTab)
             
             // 自定义 TabBar
             customTabBar

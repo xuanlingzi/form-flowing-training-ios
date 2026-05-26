@@ -337,13 +337,6 @@ struct TrainingView: View {
                         .padding(.horizontal)
                         .padding(.bottom)
                         
-                        // 每日训练建议卡片
-                        if let check = dailyCheck {
-                            dailyCheckCard(check: check)
-                                .padding(.horizontal)
-                                .padding(.bottom, 8)
-                        }
-                        
                         // 1. 直切主题：当日训练卡片流
                         ZStack {
                             if !selectedDateWorkouts.isEmpty {

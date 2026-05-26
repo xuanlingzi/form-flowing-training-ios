@@ -2,11 +2,17 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var auth: AuthManager
+    @Environment(\.selectedTab) var selectedTab
     @State private var garminStatus: GarminUserStatus?
     @State private var recentActivities: [ActivityListItem] = []
     @State private var loading = true
     @State private var syncing = false
     @State private var appear = false
+    
+    // 每日训练建议
+    @State private var dailyCheck: DailyCheckItem? = nil
+    @State private var dailyCheckCollapsed = false
+    @State private var dailyCheckExpanded = false
     
     var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
@@ -37,6 +43,12 @@ struct HomeView: View {
                         }
                         .frame(maxWidth: .infinity).padding(.top, 80)
                     } else if let s = garminStatus {
+                        // 每日训练建议卡片
+                        if let check = dailyCheck {
+                            dailyCheckHomeCard(check: check)
+                                .padding(.horizontal)
+                        }
+                        
                         // 8 个状态卡片
                         VStack(spacing: 14) {
                             // Row 1: 训练状态 + 心率
@@ -690,7 +702,21 @@ struct HomeView: View {
             }
         }()
         
-        _ = await (statusFetch, activitiesFetch)
+        async let dailyCheckFetch: Void = {
+            if let resp = try? await APIService.shared.getDailyCheckToday() {
+                await MainActor.run {
+                    if let m = resp.morning, m.status == "done" {
+                        dailyCheck = m
+                        dailyCheckCollapsed = m.userResponse != nil
+                    } else if let e = resp.evening, e.status == "done" {
+                        dailyCheck = e
+                        dailyCheckCollapsed = e.userResponse != nil
+                    }
+                }
+            }
+        }()
+        
+        _ = await (statusFetch, activitiesFetch, dailyCheckFetch)
     }
     
     private func loadFromCache() async {
@@ -712,6 +738,146 @@ struct HomeView: View {
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "yyyy年M月d日 EEEE"
         return f.string(from: date)
+    }
+    
+    // MARK: - Daily Check Card
+    
+    @ViewBuilder
+    private func dailyCheckHomeCard(check: DailyCheckItem) -> some View {
+        let actionLabels: [String: (text: String, color: Color)] = [
+            "proceed": ("按计划执行", .green),
+            "modify": ("建议调整", .orange),
+            "skip": ("建议休息", .red),
+            "reschedule": ("建议改期", .blue),
+            "no_change": ("保持原计划", .green),
+            "on_track": ("执行良好", .green),
+        ]
+        let info = actionLabels[check.action ?? ""] ?? ("AI 建议", .teal)
+        
+        if dailyCheckCollapsed {
+            // 收缩为一行，点击可展开
+            Button(action: { withAnimation { dailyCheckCollapsed = false } }) {
+                HStack(spacing: 8) {
+                    Text(check.checkType == "morning" ? "🌅" : "🌙")
+                    Text(info.text)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(info.color)
+                    Spacer()
+                    Text("点击查看")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.teal.opacity(0.04))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.teal.opacity(0.2), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        } else {
+            // 展开状态
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(check.checkType == "morning" ? "🌅 晨检建议" : "🌙 晚检建议")
+                        .font(.system(size: 14, weight: .bold))
+                    Spacer()
+                    Text(info.text)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(info.color)
+                        .cornerRadius(6)
+                }
+                
+                if let rec = check.recommendation {
+                    let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
+                    let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(body.isEmpty ? rec : body)
+                            .font(.system(size: 13))
+                            .foregroundColor(.primary)
+                            .lineLimit(dailyCheckExpanded ? nil : 4)
+                        
+                        Button(action: { withAnimation { dailyCheckExpanded.toggle() } }) {
+                            Text(dailyCheckExpanded ? "收起" : "展开全部")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.teal)
+                        }
+                    }
+                }
+                
+                HStack(spacing: 10) {
+                    if let adjustments = check.adjustments, !adjustments.isEmpty {
+                        Button(action: { applyDailyCheckAndGoTraining() }) {
+                            Text("执行调整")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.purple)
+                                .cornerRadius(8)
+                        }
+                    }
+                    Button(action: { respondAndCollapse("accepted") }) {
+                        Text("知道了")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.teal)
+                            .cornerRadius(8)
+                    }
+                    Button(action: { respondAndCollapse("ignored") }) {
+                        Text("忽略")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(UIColor.systemGray5))
+                            .cornerRadius(8)
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color.teal.opacity(0.06))
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.teal.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+    
+    private func respondAndCollapse(_ response: String) {
+        guard let check = dailyCheck else { return }
+        Task {
+            try? await APIService.shared.respondDailyCheck(
+                id: check.dailyCheckId, response: response)
+            await MainActor.run {
+                withAnimation { dailyCheckCollapsed = true }
+            }
+        }
+    }
+    
+    private func applyDailyCheckAndGoTraining() {
+        guard let check = dailyCheck else { return }
+        Task {
+            try? await APIService.shared.applyDailyCheck(id: check.dailyCheckId)
+            await MainActor.run {
+                dailyCheck = nil
+                // 切换到训练 Tab (index 2)
+                withAnimation {
+                    selectedTab.wrappedValue = 2
+                }
+            }
+        }
     }
 }
 
