@@ -1470,6 +1470,15 @@ struct TrainingView: View {
         }
     }
     
+    private func applyDailyCheck() {
+        guard let check = dailyCheck else { return }
+        Task {
+            try? await APIService.shared.applyDailyCheck(id: check.dailyCheckId)
+            await MainActor.run { dailyCheck = nil }
+            await loadData()
+        }
+    }
+    
     @ViewBuilder
     private func dailyCheckCard(check: DailyCheckItem) -> some View {
         let actionLabels: [String: (text: String, color: Color)] = [
@@ -1506,6 +1515,17 @@ struct TrainingView: View {
             }
             
             HStack(spacing: 12) {
+                if let adjustments = check.adjustments, !adjustments.isEmpty {
+                    Button(action: { applyDailyCheck() }) {
+                        Text("执行调整")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.purple)
+                            .cornerRadius(8)
+                    }
+                }
                 Button(action: { respondDailyCheck("accepted") }) {
                     Text("知道了")
                         .font(.system(size: 13, weight: .semibold))

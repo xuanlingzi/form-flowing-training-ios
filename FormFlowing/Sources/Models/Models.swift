@@ -522,8 +522,16 @@ struct DailyCheckItem: Codable, Sendable {
     let stressAvg: Int?
     let recommendation: String?
     let action: String?  // proceed / modify / skip / reschedule / no_change
+    let adjustments: [DailyCheckAdjustment]?
     let userResponse: String?
     let status: String
+}
+
+struct DailyCheckAdjustment: Codable, Sendable {
+    let action: String
+    let workoutId: Int?
+    let swapWithWorkoutId: Int?
+    let reason: String?
 }
 
 struct DailyCheckTodayResponse: Codable, Sendable {

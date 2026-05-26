@@ -465,6 +465,10 @@ final class APIService: @unchecked Sendable {
     func respondDailyCheck(id: Int, response: String) async throws {
         try await requestVoid("/daily-check/\(id)/respond", method: "POST", body: ["response": response])
     }
+    
+    func applyDailyCheck(id: Int) async throws {
+        try await requestVoid("/daily-check/\(id)/apply", method: "POST")
+    }
 
     // MARK: - 订阅
 
