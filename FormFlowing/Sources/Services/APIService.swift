@@ -456,6 +456,16 @@ final class APIService: @unchecked Sendable {
         return try await request("/training/plan/\(planId)/progress")
     }
 
+    // MARK: - 每日训练建议
+    
+    func getDailyCheckToday() async throws -> DailyCheckTodayResponse {
+        return try await request("/daily-check/today")
+    }
+    
+    func respondDailyCheck(id: Int, response: String) async throws {
+        try await requestVoid("/daily-check/\(id)/respond", method: "POST", body: ["response": response])
+    }
+
     // MARK: - 订阅
 
     func getSubscriptionStatus() async throws -> SubscriptionStatusResponse {

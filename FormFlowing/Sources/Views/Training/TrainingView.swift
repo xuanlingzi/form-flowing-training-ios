@@ -162,6 +162,9 @@ struct TrainingView: View {
     @State private var showReviewAlert = false
     @State private var planBlocks: [Int: [TrainingPlanBlock]] = [:]
     
+    // 每日训练建议
+    @State private var dailyCheck: DailyCheckItem? = nil
+    
     private var collapseProgress: CGFloat {
         min(max(scrollOffset / 60, 0), 1)
     }
@@ -333,6 +336,13 @@ struct TrainingView: View {
                         .padding(.horizontal)
                         .padding(.bottom)
                         
+                        // 每日训练建议卡片
+                        if let check = dailyCheck {
+                            dailyCheckCard(check: check)
+                                .padding(.horizontal)
+                                .padding(.bottom, 8)
+                        }
+                        
                         // 1. 直切主题：当日训练卡片流
                         ZStack {
                             if !selectedDateWorkouts.isEmpty {
@@ -409,6 +419,7 @@ struct TrainingView: View {
             )
             .task {
                 await loadData()
+                await loadDailyCheck()
                 selectedDate = todayStr()
             }
             .sheet(isPresented: $showGenSheet) {
@@ -1429,6 +1440,100 @@ struct TrainingView: View {
     }
     
     // MARK: - Goal-Driven Plan Actions
+    
+    // MARK: - Daily Check
+    
+    private func loadDailyCheck() async {
+        do {
+            let resp = try await APIService.shared.getDailyCheckToday()
+            await MainActor.run {
+                // 优先显示未响应的晨检，其次晚检
+                if let m = resp.morning, m.status == "done", m.userResponse == nil {
+                    dailyCheck = m
+                } else if let e = resp.evening, e.status == "done", e.userResponse == nil {
+                    dailyCheck = e
+                } else {
+                    dailyCheck = nil
+                }
+            }
+        } catch {
+            // 静默
+        }
+    }
+    
+    private func respondDailyCheck(_ response: String) {
+        guard let check = dailyCheck else { return }
+        Task {
+            try? await APIService.shared.respondDailyCheck(
+                id: check.dailyCheckId, response: response)
+            await MainActor.run { dailyCheck = nil }
+        }
+    }
+    
+    @ViewBuilder
+    private func dailyCheckCard(check: DailyCheckItem) -> some View {
+        let actionLabels: [String: (text: String, color: Color)] = [
+            "proceed": ("按计划执行", .green),
+            "modify": ("建议调整", .orange),
+            "skip": ("建议休息", .red),
+            "reschedule": ("建议改期", .blue),
+            "no_change": ("保持原计划", .green),
+        ]
+        let info = actionLabels[check.action ?? ""] ?? ("AI 建议", .teal)
+        
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(check.checkType == "morning" ? "🌅 晨检建议" : "🌙 晚检建议")
+                    .font(.system(size: 14, weight: .bold))
+                Spacer()
+                Text(info.text)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(info.color)
+                    .cornerRadius(6)
+            }
+            
+            if let rec = check.recommendation {
+                // 显示第一行之后的内容（第一行是 action）
+                let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
+                let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                Text(body.isEmpty ? rec : body)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+                    .lineLimit(4)
+            }
+            
+            HStack(spacing: 12) {
+                Button(action: { respondDailyCheck("accepted") }) {
+                    Text("知道了")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.teal)
+                        .cornerRadius(8)
+                }
+                Button(action: { respondDailyCheck("ignored") }) {
+                    Text("忽略")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color(UIColor.systemGray5))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.teal.opacity(0.06))
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.teal.opacity(0.3), lineWidth: 1)
+        )
+    }
     
     private func loadProgress(planId: Int) {
         loadingProgress = true

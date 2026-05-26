@@ -510,6 +510,27 @@ struct PlanStats: Codable, Sendable {
     let pushedWorkouts: Int?
 }
 
+// MARK: - Daily Check
+
+struct DailyCheckItem: Codable, Sendable {
+    let dailyCheckId: Int
+    let checkType: String  // morning / evening
+    let checkDate: String
+    let bodyBattery: Int?
+    let hrvLastNight: Double?
+    let sleepScore: Int?
+    let stressAvg: Int?
+    let recommendation: String?
+    let action: String?  // proceed / modify / skip / reschedule / no_change
+    let userResponse: String?
+    let status: String
+}
+
+struct DailyCheckTodayResponse: Codable, Sendable {
+    let morning: DailyCheckItem?
+    let evening: DailyCheckItem?
+}
+
 // MARK: - Training Goal
 
 struct TrainingGoalResponse: Codable, Sendable {
