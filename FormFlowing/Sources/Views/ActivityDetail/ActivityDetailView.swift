@@ -34,19 +34,16 @@ struct ActivityDetailView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView {
                 if loading {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("加载活动数据...").font(.caption).foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity).padding(.top, 120)
+                    ProgressView("加载活动数据...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 120)
                 } else if let act = activity {
                     VStack(spacing: 16) {
                         // GPS 轨迹地图
                         if hasGPSData {
                             mapSection
-                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         
                         // 顶部 hero card
@@ -58,39 +55,28 @@ struct ActivityDetailView: View {
                         // 图表
                         if !records.isEmpty {
                             chartsSection
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // 分圈
                         if laps.count > 1 {
                             lapsSection
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // AI 分析
                         if let analysis = analysis {
                             aiSection(analysis)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         
                         // 触发分析按钮
                         analyzeButton
                     }
-                    .padding(20)
+                    .padding()
                     .frame(width: geometry.size.width)
-                    .clipped()
-                    .opacity(appear ? 1 : 0)
-                    .offset(y: appear ? 0 : 15)
-                    .animation(.easeOut(duration: 0.5), value: appear)
-                    .animation(.easeInOut(duration: 0.35), value: records.count)
-                    .animation(.easeInOut(duration: 0.35), value: laps.count)
-                    .animation(.easeInOut(duration: 0.35), value: analysis?.id)
+                    .backgroundStyle(Color(.secondarySystemGroupedBackground))
                 }
             }
         }
-        .background(
-            LinearGradient(colors: [sportConfig.color.opacity(0.06), Color(UIColor.systemGroupedBackground)], startPoint: .top, endPoint: .center)
-        )
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(activity?.activityName ?? "活动详情")
         .navigationBarTitleDisplayMode(.inline)
         .hideTabBar()
@@ -101,36 +87,27 @@ struct ActivityDetailView: View {
     
     // MARK: - Hero Card
     
-    @ViewBuilder
     func heroCard(_ act: ActivitySummary) -> some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 14) {
-                Text(sportConfig.icon).font(.system(size: 36))
-                    .frame(width: 56, height: 56)
-                    .background(sportConfig.color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(act.activityName ?? "活动").font(.system(size: 18, weight: .bold))
-                    Text("\(act.startTimeLocal ?? "") · \(sportConfig.label)")
-                        .font(.system(size: 12)).foregroundColor(.secondary)
+        let metrics = buildHeroMetrics(act)
+        return GroupBox {
+            HStack(spacing: 0) {
+                ForEach(metrics) { m in
+                    StatPill(value: m.value, unit: m.unit, label: m.label)
                 }
-                Spacer()
             }
-            
-            // Hero stats - 使用 Grid 避免溢出
-            let metrics = buildHeroMetrics(act)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: min(metrics.count, 4)), spacing: 8) {
-                ForEach(metrics, id: \.label) { m in
-                    HeroMetric(value: m.value, unit: m.unit, label: m.label, color: m.color)
+            .padding(.top, 4)
+        } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(act.activityName ?? "活动")
+                    Text("\(act.startTimeLocal ?? "") · \(sportConfig.label)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+            } icon: {
+                Text(sportConfig.icon)
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(.white)
-                .shadow(color: sportConfig.color.opacity(0.08), radius: 16, y: 6)
-        )
     }
     
     // MARK: - Metrics Grid
@@ -140,27 +117,14 @@ struct ActivityDetailView: View {
         let items = buildMetricItems(act)
         
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("详细数据").font(.system(size: 16, weight: .semibold))
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            GroupBox("详细数据") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                     ForEach(items, id: \.label) { item in
-                        VStack(spacing: 4) {
-                            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                                Text(item.value).font(.system(size: 17, weight: .bold, design: .rounded))
-                                Text(item.unit).font(.system(size: 10)).foregroundColor(.secondary)
-                            }
-                            Text(item.label).font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(12)
+                        StatPill(value: item.value, unit: item.unit.isEmpty ? nil : item.unit, label: item.label)
                     }
                 }
+                .padding(.top, 4)
             }
-            .padding(18)
-            .background(.white)
-            .cornerRadius(20)
         }
     }
     
@@ -193,84 +157,62 @@ struct ActivityDetailView: View {
     // MARK: - Laps Section
     
     var lapsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "flag.checkered").foregroundColor(.orange)
-                Text("分圈数据").font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Text("\(laps.count) 圈").font(.caption).foregroundColor(.secondary)
-            }
-            
-            ForEach(Array(laps.enumerated()), id: \.offset) { idx, lap in
-                HStack(spacing: 12) {
-                    Text("\(idx + 1)")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(width: 22, height: 22)
-                        .background(sportConfig.color.opacity(0.8))
-                        .clipShape(Circle())
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(formatDuration(lap.totalTimerTime))
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        if let d = lap.totalDistance {
-                            Text(String(format: "%.2f km", d / 1000))
-                                .font(.system(size: 11)).foregroundColor(.secondary)
+        GroupBox {
+            VStack(spacing: 0) {
+                ForEach(Array(laps.enumerated()), id: \.offset) { idx, lap in
+                    LabeledContent {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(lapPrimaryText(lap))
+                            Text(lapPowerText(lap))
+                        }
+                        .font(.caption)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(formatDuration(lap.totalTimerTime))
+                                    .font(.subheadline.weight(.semibold))
+                                    .monospacedDigit()
+                                if let d = lap.totalDistance {
+                                    Text(String(format: "%.2f km", d / 1000))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: idx < 50 ? "\(idx + 1).circle.fill" : "circle.fill")
+                                .foregroundStyle(sportConfig.color)
                         }
                     }
-                    
-                    Spacer(minLength: 4)
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        HStack(spacing: 8) {
-                            if let spd = lap.avgSpeed {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "speedometer").font(.system(size: 9)).foregroundColor(.cyan)
-                                    Text(String(format: "%.1f km/h", spd * 3.6)).font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                            if let cad = lap.avgCadence {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 9)).foregroundColor(.blue)
-                                    Text("\(cad) rpm").font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                            if let hr = lap.avgHeartRate {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "heart.fill").font(.system(size: 9)).foregroundColor(.red)
-                                    Text("\(hr) bpm").font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                        }
-                        
-                        HStack(spacing: 12) {
-                            if let ap = lap.avgPower {
-                                HStack(spacing: 2) {
-                                    Text("AP").font(.system(size: 9, weight: .bold)).foregroundColor(.yellow)
-                                    Text("\(ap) W").font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                            if let np = lap.normalizedPower {
-                                HStack(spacing: 2) {
-                                    Text("NP").font(.system(size: 9, weight: .bold)).foregroundColor(.purple)
-                                    Text("\(np) W").font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                        }
-                    }
+                    .padding(.vertical, 8)
+                    if idx < laps.count - 1 { Divider() }
                 }
-                .padding(.vertical, 8)
-                if idx < laps.count - 1 { Divider() }
+            }
+        } label: {
+            LabeledContent {
+                Text("\(laps.count) 圈").font(.caption)
+            } label: {
+                Label("分圈数据", systemImage: "flag.checkered")
             }
         }
-        .padding(18)
-        .background(.white)
-        .cornerRadius(20)
+    }
+    
+    private func lapPrimaryText(_ lap: LapData) -> String {
+        var parts: [String] = []
+        if let spd = lap.avgSpeed { parts.append(String(format: "%.1f km/h", spd * 3.6)) }
+        if let cad = lap.avgCadence { parts.append("\(cad) rpm") }
+        if let hr = lap.avgHeartRate { parts.append("\(hr) bpm") }
+        return parts.joined(separator: " · ")
+    }
+    
+    private func lapPowerText(_ lap: LapData) -> String {
+        var parts: [String] = []
+        if let ap = lap.avgPower { parts.append("AP \(ap) W") }
+        if let np = lap.normalizedPower { parts.append("NP \(np) W") }
+        return parts.joined(separator: " · ")
     }
     
     // MARK: - AI Section
     
-    @ViewBuilder
     func aiSection(_ analysis: AnalysisResult) -> some View {
         let isPro = analysis.tier != nil && analysis.tier != "fast"
         let modelStr = analysis.modelUsed
@@ -278,61 +220,43 @@ struct ActivityDetailView: View {
                 guard !modelUsed.isEmpty else { return nil }
                 return " · " + (modelUsed.components(separatedBy: "/").last ?? modelUsed)
             } ?? ""
-        let badgeText = (isPro ? "🔬 深度" : "⚡️ 快速") + modelStr
+        let badgeText = (isPro ? "深度" : "快速") + modelStr
         
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.linearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Text("AI 训练分析").font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Text(badgeText)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isPro ? .purple : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(isPro ? Color.purple.opacity(0.12) : Color.gray.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(isPro ? Color.purple.opacity(0.25) : Color.gray.opacity(0.2), lineWidth: 1)
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 14) {
+                MarkdownTextView(markdown: analysis.resultMd ?? "", baseFontSize: 13)
+                
+                // MARK: - 追问区域
+                if analysis.canChat == true {
+                    Divider()
+                    
+                    Label("继续追问", systemImage: "bubble.left.and.bubble.right")
+                        .font(.subheadline.weight(.semibold))
+                    
+                    AnalysisChatView(
+                        messages: chatMessages,
+                        pendingAdjustments: pendingAdjustments,
+                        applyingAdjustments: applyingAdjustments,
+                        adjustmentSuccess: adjustmentSuccess,
+                        chatError: chatError,
+                        chatInput: $chatInput,
+                        chatLoading: chatLoading,
+                        onSend: { doSendChat(analysisId: analysis.analysisResultId) },
+                        onApply: { doApplyAdjustments() }
                     )
-            }
-            
-            MarkdownTextView(markdown: analysis.resultMd ?? "", baseFontSize: 13)
-            
-            // MARK: - 追问区域
-            if analysis.canChat == true {
-                Divider().padding(.vertical, 4)
-                
-                HStack(spacing: 6) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .foregroundColor(.indigo)
-                    Text("继续追问").font(.system(size: 14, weight: .semibold))
                 }
-                
-                AnalysisChatView(
-                    messages: chatMessages,
-                    pendingAdjustments: pendingAdjustments,
-                    applyingAdjustments: applyingAdjustments,
-                    adjustmentSuccess: adjustmentSuccess,
-                    chatError: chatError,
-                    chatInput: $chatInput,
-                    chatLoading: chatLoading,
-                    onSend: { doSendChat(analysisId: analysis.analysisResultId) },
-                    onApply: { doApplyAdjustments() }
-                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+        } label: {
+            LabeledContent {
+                Text(badgeText)
+                    .font(.caption)
+                    .foregroundStyle(isPro ? .purple : .secondary)
+            } label: {
+                Label("AI 训练分析", systemImage: "sparkles")
             }
         }
-        .padding(18)
-        .background(.white)
-        .cornerRadius(20)
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(colors: [.purple.opacity(0.2), .pink.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1
-                )
-        )
     }
     
     // MARK: - Analyze Button
@@ -349,14 +273,9 @@ struct ActivityDetailView: View {
     var analyzeButton: some View {
         let isReanalyze = hasProAnalysis
         let isDeep = hasFastOnly
-        let label = analyzing ? "AI 分析中..." : isReanalyze ? "🔄 重新分析" : isDeep ? "🔬 深度分析" : "启动 AI 分析"
-        let colors: [Color] = analyzing ? [.gray]
-            : isReanalyze ? [.blue, .indigo]
-            : isDeep ? [.red, .orange]
-            : [Color(red: 0.05, green: 0.58, blue: 0.53), .green]
-        let shadowColor: Color = isReanalyze ? .blue : isDeep ? .red : .teal
+        let label = analyzing ? "AI 分析中..." : isReanalyze ? "重新分析" : isDeep ? "深度分析" : "启动 AI 分析"
         
-        return Button(action: {
+        return Button {
             if isReanalyze {
                 showReanalyzeSheet = true
             } else if isDeep {
@@ -364,25 +283,19 @@ struct ActivityDetailView: View {
             } else {
                 doTriggerAnalysis()
             }
-        }) {
-            HStack(spacing: 10) {
+        } label: {
+            HStack(spacing: 8) {
                 if analyzing {
-                    ProgressView().tint(.white)
+                    ProgressView()
                 } else {
-                    Image(systemName: isReanalyze ? "arrow.clockwise" : "sparkles")
+                    Image(systemName: isReanalyze ? "arrow.clockwise" : isDeep ? "sparkle.magnifyingglass" : "sparkles")
                 }
                 Text(label)
-                    .font(.system(size: 16, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-            )
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: shadowColor.opacity(analyzing ? 0 : 0.3), radius: 8, y: 4)
         }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
         .disabled(analyzing)
         .alert("深度分析", isPresented: $showDeepConfirm) {
             Button("取消", role: .cancel) {}
@@ -395,9 +308,8 @@ struct ActivityDetailView: View {
                 showReanalyzeSheet = false
                 doTriggerAnalysis(extraPrompt: $0)
             }
-            .presentationDetents([.fraction(0.72), .large])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-            .presentationCornerRadius(28)
         }
     }
     
@@ -418,43 +330,27 @@ struct ActivityDetailView: View {
     var mapSection: some View {
         let coords = gpsCoordinates
         if coords.count > 1 {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "map.fill")
-                        .foregroundColor(sportConfig.color)
-                    Text("GPS 轨迹")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                
+            GroupBox {
                 Map {
                     MapPolyline(coordinates: coords)
                         .stroke(sportConfig.color, lineWidth: 3)
                     
                     // 起点
                     if let first = coords.first {
-                        Annotation("起点", coordinate: first) {
-                            Circle()
-                                .fill(.green)
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().stroke(.white, lineWidth: 2))
-                        }
+                        Marker("起点", systemImage: "flag.fill", coordinate: first)
+                            .tint(.green)
                     }
                     // 终点
                     if let last = coords.last {
-                        Annotation("终点", coordinate: last) {
-                            Circle()
-                                .fill(.red)
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().stroke(.white, lineWidth: 2))
-                        }
+                        Marker("终点", systemImage: "flag.checkered", coordinate: last)
+                            .tint(.red)
                     }
                 }
                 .frame(height: 200)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } label: {
+                Label("GPS 轨迹", systemImage: "map.fill")
             }
-            .padding(16)
-            .background(.white)
-            .cornerRadius(20)
         }
     }
     
@@ -471,31 +367,33 @@ struct ActivityDetailView: View {
         ]
     }
     
-    @ViewBuilder
     var chartsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "chart.xyaxis.line")
-                    .foregroundColor(.indigo)
-                Text("数据图表")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            
-            ForEach(chartConfigs, id: \.key) { config in
-                let hasData = records.contains { recordValue(for: config.key, in: $0) != nil }
-                if hasData {
-                    chartCard(config: config)
+        GroupBox {
+            VStack(spacing: 8) {
+                ForEach(chartConfigs, id: \.key) { config in
+                    let hasData = records.contains { recordValue(for: config.key, in: $0) != nil }
+                    if hasData {
+                        chartCard(config: config)
+                    }
                 }
             }
+            .padding(.top, 4)
+        } label: {
+            Label("数据图表", systemImage: "chart.xyaxis.line")
         }
-        .padding(16)
-        .background(.white)
-        .cornerRadius(20)
     }
     
-    @ViewBuilder
     func chartCard(config: (key: String, label: String, unit: String, color: Color)) -> some View {
-        let isExpanded = expandedCharts.contains(config.key)
+        let isExpanded = Binding(
+            get: { expandedCharts.contains(config.key) },
+            set: { newValue in
+                if newValue {
+                    expandedCharts.insert(config.key)
+                } else {
+                    expandedCharts.remove(config.key)
+                }
+            }
+        )
         let values = records.enumerated().compactMap { (idx, r) -> ChartDataPoint? in
             guard let v = recordValue(for: config.key, in: r) else { return nil }
             return ChartDataPoint(index: idx, value: v)
@@ -503,47 +401,14 @@ struct ActivityDetailView: View {
         let avg = values.isEmpty ? 0 : values.map(\.value).reduce(0, +) / Double(values.count)
         let maxV = values.map(\.value).max() ?? 0
         
-        VStack(spacing: 0) {
-            // Header - tap to toggle
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    if expandedCharts.contains(config.key) {
-                        expandedCharts.remove(config.key)
-                    } else {
-                        expandedCharts.insert(config.key)
-                    }
-                }
-            }) {
-                HStack {
-                    Circle().fill(config.color).frame(width: 8, height: 8)
-                    Text(config.label)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(config.color)
-                    Text("(\(config.unit))")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("均 \(formatChartValue(avg, config.key))").font(.system(size: 11)).foregroundColor(.secondary)
-                    Text("峰 \(formatChartValue(maxV, config.key))").font(.system(size: 11)).foregroundColor(.secondary)
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-            
-            // Chart
-            if isExpanded && !values.isEmpty {
+        return DisclosureGroup(isExpanded: isExpanded) {
+            if !values.isEmpty {
                 Chart(values) { point in
                     AreaMark(
                         x: .value("Index", point.index),
                         y: .value(config.label, point.value)
                     )
-                    .foregroundStyle(
-                        LinearGradient(colors: [config.color.opacity(0.3), config.color.opacity(0.05)],
-                                       startPoint: .top, endPoint: .bottom)
-                    )
+                    .foregroundStyle(config.color.opacity(0.2))
                     
                     LineMark(
                         x: .value("Index", point.index),
@@ -557,18 +422,21 @@ struct ActivityDetailView: View {
                     AxisMarks(position: .leading) { value in
                         AxisValueLabel {
                             Text("\(value.as(Double.self).map { formatChartValue($0, config.key) } ?? "")")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
                 .frame(height: 120)
-                .padding(.bottom, 4)
+                .padding(.vertical, 4)
             }
-        }
-        
-        if config.key != chartConfigs.last?.key {
-            Divider()
+        } label: {
+            LabeledContent {
+                Text("均 \(formatChartValue(avg, config.key)) · 峰 \(formatChartValue(maxV, config.key))")
+                    .font(.caption)
+            } label: {
+                Text("\(config.label) (\(config.unit))")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(config.color)
+            }
         }
     }
     
@@ -807,7 +675,6 @@ struct ActivityDetailView: View {
 private struct ReanalyzeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var prompt = ""
-    @FocusState private var isEditorFocused: Bool
 
     let onSubmit: (String?) -> Void
 
@@ -817,106 +684,36 @@ private struct ReanalyzeSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "waveform.and.magnifyingglass")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 34, height: 34)
-                                .background(
-                                    LinearGradient(
-                                        colors: [.blue, .indigo],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                            Text("重新分析")
-                                .font(.title3.weight(.bold))
-                                .foregroundColor(.primary)
-                        }
-
-                        Text("使用 Pro 模型重新分析本次训练。你可以补充关注点，结果会更聚焦。")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("补充要求")
-                                .font(.headline)
-                            Spacer()
-                            Text("\(prompt.count)/300")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        ZStack(alignment: .topLeading) {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color(UIColor.secondarySystemGroupedBackground))
-
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color.blue.opacity(isEditorFocused ? 0.25 : 0.1), lineWidth: 1)
-
-                            TextEditor(text: Binding(
-                                get: { prompt },
-                                set: { prompt = String($0.prefix(300)) }
-                            ))
-                            .focused($isEditorFocused)
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .frame(minHeight: 180)
-                            .background(Color.clear)
-
-                            if prompt.isEmpty {
-                                Text("例如：请重点分析间歇训练后半程的功率衰减、心率漂移和配速稳定性。")
-                                    .font(.subheadline)
-                                    .foregroundColor(Color(UIColor.placeholderText))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 18)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    .padding(16)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-                    Button(action: {
-                        dismiss()
-                        onSubmit(trimmedPrompt.isEmpty ? nil : trimmedPrompt)
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                            Text("开始分析")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            LinearGradient(
-                                colors: [.blue, .indigo],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
+            Form {
+                Section {
+                    TextField(
+                        "补充要求",
+                        text: Binding(
+                            get: { prompt },
+                            set: { prompt = String($0.prefix(300)) }
+                        ),
+                        prompt: Text("例如：请重点分析间歇训练后半程的功率衰减、心率漂移和配速稳定性。"),
+                        axis: .vertical
+                    )
+                    .lineLimit(5...12)
+                } header: {
+                    Text("补充要求")
+                } footer: {
+                    Text("使用 Pro 模型重新分析本次训练。你可以补充关注点，结果会更聚焦。（\(prompt.count)/300）")
                 }
-                .padding(20)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color(UIColor.systemGroupedBackground))
+            .navigationTitle("重新分析")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("开始分析") {
+                        dismiss()
+                        onSubmit(trimmedPrompt.isEmpty ? nil : trimmedPrompt)
+                    }
                 }
             }
         }
@@ -931,36 +728,6 @@ struct HeroMetricItem: Identifiable {
     let label: String
     let color: Color
     var id: String { label }
-}
-
-struct HeroMetric: View {
-    let value: String
-    var unit: String? = nil
-    let label: String
-    var color: Color = .primary
-    
-    var body: some View {
-        VStack(spacing: 5) {
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value).font(.system(size: 20, weight: .bold, design: .rounded))
-                if let unit = unit {
-                    Text(unit).font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
-                }
-            }
-            Text(label).font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-struct DetailRow: View {
-    let label: String; let value: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundColor(.secondary)
-            Text(value).font(.subheadline.weight(.semibold))
-        }
-    }
 }
 
 struct ChartDataPoint: Identifiable {
@@ -995,17 +762,28 @@ struct AnalysisChatView: View {
             
             // 待应用调整
             if let pending = pendingAdjustments, !pending.isEmpty {
-                pendingBar(count: pending.count)
+                LabeledContent("共 \(pending.count) 项调整待确认") {
+                    Button(applyingAdjustments ? "应用中..." : "确认应用", action: onApply)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.green)
+                        .disabled(applyingAdjustments)
+                }
+                .font(.footnote)
             }
             
             // 调整成功提示
             if let successMsg = adjustmentSuccess {
-                successBanner(successMsg)
+                Label(successMsg, systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.green)
             }
             
             // 错误提示
             if let err = chatError {
-                errorBanner(err)
+                Label(err, systemImage: "exclamationmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
             }
             
             // 输入区
@@ -1013,75 +791,23 @@ struct AnalysisChatView: View {
         }
     }
     
-    private func pendingBar(count: Int) -> some View {
-        HStack {
-            Text("共 \(count) 项调整待确认")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.green)
-            Spacer()
-            Button(action: onApply) {
-                Text(applyingAdjustments ? "应用中..." : "✅ 确认应用")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(applyingAdjustments ? Color.gray : Color.green)
-                    .cornerRadius(8)
-            }
-            .disabled(applyingAdjustments)
-        }
-        .padding(10)
-        .background(Color.green.opacity(0.08))
-        .cornerRadius(10)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.green.opacity(0.25), lineWidth: 1))
-    }
-    
-    private func successBanner(_ msg: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-            Text(msg).font(.system(size: 12)).foregroundColor(.green)
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.green.opacity(0.08))
-        .cornerRadius(8)
-    }
-    
-    private func errorBanner(_ err: String) -> some View {
-        Text(err)
-            .font(.system(size: 12))
-            .foregroundColor(.red)
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.red.opacity(0.08))
-            .cornerRadius(8)
-    }
-    
     private var chatInputBar: some View {
         let isEmpty = chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(spacing: 8) {
+        return HStack(alignment: .bottom, spacing: 8) {
             TextField("针对这次训练继续提问", text: $chatInput, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .textFieldStyle(.roundedBorder)
                 .lineLimit(1...4)
-                .padding(10)
-                .background(Color(UIColor.systemGray6))
-                .cornerRadius(10)
                 .disabled(chatLoading)
             
             Button(action: onSend) {
-                Group {
-                    if chatLoading {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                    }
+                if chatLoading {
+                    ProgressView()
+                } else {
+                    Image(systemName: "paperplane.fill")
                 }
-                .frame(width: 38, height: 38)
-                .background(isEmpty || chatLoading ? Color.gray.opacity(0.3) : Color.blue)
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("发送")
             .disabled(isEmpty || chatLoading)
         }
     }
@@ -1101,18 +827,16 @@ private struct ChatBubbleView: View {
                 if role == "assistant" {
                     MarkdownTextView(markdown: content, baseFontSize: 12)
                 } else {
-                    Text(content).font(.system(size: 13))
+                    Text(content).font(.footnote)
                 }
                 if let adjustments, !adjustments.isEmpty {
                     AdjustmentPreviewView(adjustments: adjustments)
                 }
             }
-            .padding(role == "user" ? 8 : 10)
-            .background(role == "user" ? Color.blue.opacity(0.08) : Color(UIColor.systemGray6))
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(role == "user" ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15), lineWidth: 1)
+            .padding(10)
+            .background(
+                role == "user" ? AnyShapeStyle(.tint.opacity(0.15)) : AnyShapeStyle(.fill.tertiary),
+                in: RoundedRectangle(cornerRadius: 12)
             )
             if role == "assistant" { Spacer(minLength: 20) }
         }
@@ -1126,48 +850,45 @@ private struct AdjustmentPreviewView: View {
     
     private func actionLabel(_ action: String) -> String {
         switch action {
-        case "modify": return "📝 修改"
-        case "skip": return "⏭️ 跳过"
-        case "reduce": return "⬇️ 降强度"
-        case "swap": return "🔄 交换"
+        case "modify": return "修改"
+        case "skip": return "跳过"
+        case "reduce": return "降强度"
+        case "swap": return "交换"
         default: return action
         }
     }
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundColor(.orange)
-                Text("AI 建议的计划调整")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color(red: 0.57, green: 0.25, blue: 0.05))
-            }
-            ForEach(Array(adjustments.enumerated()), id: \.offset) { _, adj in
-                adjustmentRow(adj)
-            }
+    private func actionIcon(_ action: String) -> String {
+        switch action {
+        case "modify": return "pencil"
+        case "skip": return "forward.end"
+        case "reduce": return "arrow.down"
+        case "swap": return "arrow.left.arrow.right"
+        default: return "bolt"
         }
-        .padding(10)
-        .background(
-            LinearGradient(colors: [Color.yellow.opacity(0.15), Color.yellow.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        )
-        .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.4), lineWidth: 1))
     }
     
-    private func adjustmentRow(_ adj: PlanAdjustment) -> some View {
-        HStack(spacing: 4) {
-            Text(actionLabel(adj.action)).font(.system(size: 11, weight: .semibold))
-            if let wid = adj.workoutId {
-                Text("#\(wid)").font(.system(size: 11)).foregroundColor(.secondary)
-            }
-            if let reason = adj.reason {
-                Text("— \(reason)").font(.system(size: 11)).foregroundColor(.secondary).lineLimit(2)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("AI 建议的计划调整", systemImage: "bolt.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+            ForEach(Array(adjustments.enumerated()), id: \.offset) { _, adj in
+                Label {
+                    Text(adjustmentText(adj))
+                        .lineLimit(2)
+                } icon: {
+                    Image(systemName: actionIcon(adj.action))
+                }
+                .font(.caption)
             }
         }
-        .padding(6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
-        .cornerRadius(6)
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.yellow.opacity(0.5), lineWidth: 1))
+    }
+    
+    private func adjustmentText(_ adj: PlanAdjustment) -> String {
+        var text = actionLabel(adj.action)
+        if let wid = adj.workoutId { text += " #\(wid)" }
+        if let reason = adj.reason { text += " — \(reason)" }
+        return text
     }
 }

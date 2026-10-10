@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct HomeView: View {
     @EnvironmentObject var auth: AuthManager
@@ -25,87 +26,70 @@ struct HomeView: View {
         }
     }
     
-    @State private var scrollOffset: CGFloat = 0
-    
-    // 折叠进度 0=展开 1=完全折叠
-    private var collapseProgress: CGFloat {
-        min(max(scrollOffset / 60, 0), 1)
-    }
-    
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
                     if loading {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("加载中...").font(.caption).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity).padding(.top, 80)
+                        ProgressView("加载中...")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 80)
                     } else if let s = garminStatus {
                         // 每日训练建议卡片
                         if let check = dailyCheck {
                             dailyCheckHomeCard(check: check)
-                                .padding(.horizontal)
                         }
                         
-                        // 8 个状态卡片
-                        VStack(spacing: 14) {
-                            // Row 1: 训练状态 + 心率
-                            EqualHeightHStack(spacing: 12) {
+                        // 状态卡片
+                        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                            GridRow {
                                 trainingStatusCard(s)
                                 heartRateCard(s)
                             }
-                            // Row 2: 身体电量 + 健康
-                            EqualHeightHStack(spacing: 12) {
+                            GridRow {
                                 bodyBatteryCard(s)
                                 healthCard(s)
                             }
-                            // 训练负荷（全宽）
                             trainingLoadCard(s)
-                            // Row 3: 今日活动 + 睡眠
-                            EqualHeightHStack(spacing: 12) {
+                            GridRow {
                                 todayActivityCard(s)
                                 sleepCard(s)
                             }
-                            // HRV（全宽）
-                            hrvCard(s)
+                            if s.hrvLastNight != nil {
+                                hrvCard(s)
+                            }
                         }
-                        .padding(.horizontal)
-                        .opacity(appear ? 1 : 0)
-                        .offset(y: appear ? 0 : 15)
-                        .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
-                        .animation(.easeInOut(duration: 0.35), value: recentActivities.count)
                         
                         // AI 分析
                         if !recentActivities.isEmpty {
                             analysisSection
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                                .opacity(appear ? 1 : 0)
-                                .offset(y: appear ? 0 : 15)
-                                .animation(.easeOut(duration: 0.5).delay(0.2), value: appear)
                         }
                     }
                 }
-                .padding(.bottom)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ScrollOffsetKey.self,
-                            value: -geo.frame(in: .named("scroll")).origin.y
-                        )
+                .padding()
+                .backgroundStyle(Color(.secondarySystemGroupedBackground))
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(auth.username)
+            .navigationSubtitle(greeting)
+            .toolbar {
+                if garminStatus?.primaryDevice != nil || garminStatus?.garminSyncedAt != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            if let device = garminStatus?.primaryDevice {
+                                Text(device).lineLimit(1)
+                            }
+                            if let syncTime = garminStatus?.garminSyncedAt {
+                                Text("同步 " + String(syncTime.suffix(8).prefix(5)))
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
                     }
-                )
+                    .sharedBackgroundVisibility(.hidden)
+                }
             }
-            .coordinateSpace(name: "scroll")
-            .onPreferenceChange(ScrollOffsetKey.self) { value in
-                scrollOffset = value
-            }
-            .safeAreaInset(edge: .top) {
-                collapsibleHeader
-            }
-            .background(Color(UIColor.systemGroupedBackground))
-            .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 // 下拉同时触发 Garmin 同步
                 try? await APIService.shared.refreshGarmin()
@@ -117,71 +101,33 @@ struct HomeView: View {
         }
     }
     
-    // MARK: - 可折叠头部
-    
-    var collapsibleHeader: some View {
-        let nameSize: CGFloat = 20
-        let greetingSize: CGFloat = 11
-
-        return HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(greeting)
-                        .font(.system(size: greetingSize))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Text(auth.username)
-                        .font(.system(size: nameSize, weight: .bold))
-                        .lineLimit(1)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    if let device = garminStatus?.primaryDevice {
-                        Text(device)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    if let syncTime = garminStatus?.garminSyncedAt {
-                        Text("同步 " + String(syncTime.suffix(8).prefix(5)))
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                }
-        }
-        .padding(.horizontal)
-        .frame(height: 44)
-        .background(Color(UIColor.systemBackground))
-    }
-    
     // MARK: - Card 1: 训练状态
     
-    @ViewBuilder
     func trainingStatusCard(_ s: GarminUserStatus) -> some View {
-        let _ = s.vo2MaxCycling ?? s.vo2MaxRunning ?? 0
         let acwr = GarminLocalization.acwrStatus(s.acwrStatus)
         
-        StatusCardView(icon: "figure.run", iconColor: .emerald, title: "训练状态", borderColor: .emerald) {
+        return StatusCardView(icon: "figure.run", iconColor: .emerald, title: "训练状态") {
             VStack(alignment: .leading, spacing: 6) {
                 Text(GarminLocalization.trainingStatus(s.trainingStatus))
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.headline)
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text(s.acwrRatio.map { String(format: "%.1f", $0) } ?? "-")
-                        .font(.system(size: 28, weight: .black, design: .rounded))
-                        .foregroundColor(.emerald)
-                    Text("ACWR").font(.system(size: 10)).foregroundColor(.secondary)
+                        .font(.title.weight(.bold))
+                        .fontDesign(.rounded)
+                        .foregroundStyle(Color.emerald)
+                    Text("ACWR").font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(acwr.text)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(acwrColor(s.acwrStatus))
+                    .font(.caption)
+                    .foregroundStyle(acwrColor(s.acwrStatus))
             }
         }
     }
     
     // MARK: - Card 2: 心率
     
-    @ViewBuilder
     func heartRateCard(_ s: GarminUserStatus) -> some View {
-        StatusCardView(icon: "heart.fill", iconColor: .pink, title: "心率", borderColor: .pink) {
+        StatusCardView(icon: "heart.fill", iconColor: .pink, title: "心率") {
             VStack(spacing: 6) {
                 metricRow("静息心率", "\(s.hrRest ?? 0)", "bpm")
                 metricRow("LTHR", "\(s.hrLthr ?? 0)", "")
@@ -193,42 +139,22 @@ struct HomeView: View {
     
     // MARK: - Card 3: 身体电量
     
-    @ViewBuilder
     func bodyBatteryCard(_ s: GarminUserStatus) -> some View {
-        let bbPct = Double(s.bodyBatteryLatest ?? 0) / 100.0
-        StatusCardView(icon: "battery.75percent", iconColor: .orange, title: "身体电量", borderColor: .orange) {
+        let bb = Double(s.bodyBatteryLatest ?? 0)
+        return StatusCardView(icon: "battery.75percent", iconColor: .orange, title: "身体电量") {
             HStack(spacing: 12) {
-                // 圆环
-                ZStack {
-                    Circle().stroke(Color(UIColor.systemGray5), lineWidth: 6)
-                    Circle().trim(from: 0, to: bbPct)
-                        .stroke(
-                            bbPct > 0.5 ? Color.green : bbPct > 0.25 ? Color.orange : Color.red,
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeOut(duration: 0.8), value: bbPct)
+                Gauge(value: min(max(bb, 0), 100), in: 0...100) {
+                    Text("身体电量")
+                } currentValueLabel: {
                     Text("\(s.bodyBatteryLatest ?? 0)")
-                        .font(.system(size: 18, weight: .black, design: .rounded))
                 }
-                .frame(width: 56, height: 56)
+                .gaugeStyle(.accessoryCircularCapacity)
+                .tint(bb > 50 ? .green : bb > 25 ? .orange : .red)
                 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("压力").font(.system(size: 12)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(s.stressAvg ?? 0)").font(.system(size: 13, weight: .semibold))
-                    }
-                    HStack {
-                        Text("最高").font(.system(size: 12)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(s.bodyBatteryHigh ?? 0)").font(.system(size: 13, weight: .semibold))
-                    }
-                    HStack {
-                        Text("最低").font(.system(size: 12)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(s.bodyBatteryLow ?? 0)").font(.system(size: 13, weight: .semibold))
-                    }
+                VStack(spacing: 5) {
+                    metricRow("压力", "\(s.stressAvg ?? 0)", "")
+                    metricRow("最高", "\(s.bodyBatteryHigh ?? 0)", "")
+                    metricRow("最低", "\(s.bodyBatteryLow ?? 0)", "")
                 }
             }
         }
@@ -236,17 +162,17 @@ struct HomeView: View {
     
     // MARK: - Card 4: 健康
     
-    @ViewBuilder
     func healthCard(_ s: GarminUserStatus) -> some View {
-        StatusCardView(icon: "wind", iconColor: .blue, title: "健康", borderColor: .blue) {
+        StatusCardView(icon: "wind", iconColor: .blue, title: "健康") {
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("血氧").font(.system(size: 12)).foregroundColor(.secondary)
+                    Text("血氧").font(.caption).foregroundStyle(.secondary)
                     HStack(alignment: .lastTextBaseline, spacing: 2) {
                         Text("\(s.spo2Avg ?? s.spo2Latest ?? 0)")
-                            .font(.system(size: 22, weight: .black, design: .rounded))
-                            .foregroundColor(.blue)
-                        Text("%").font(.system(size: 11)).foregroundColor(.secondary)
+                            .font(.title2.weight(.bold))
+                            .fontDesign(.rounded)
+                            .foregroundStyle(.blue)
+                        Text("%").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 metricRow("呼吸率", s.respirationAvgWaking.map { String(format: "%.1f", $0) } ?? "-", "")
@@ -258,110 +184,58 @@ struct HomeView: View {
     
     // MARK: - Card 5: 训练负荷（全宽）
     
-    @ViewBuilder
     func trainingLoadCard(_ s: GarminUserStatus) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "flame.fill").font(.system(size: 13)).foregroundColor(.teal)
-                    Text("训练负荷").font(.system(size: 14, weight: .semibold))
-                }
-                Spacer()
-                HStack(spacing: 12) {
-                    HStack(spacing: 3) {
-                        Text("急性").font(.system(size: 10)).foregroundColor(.secondary)
-                        Text(s.acuteLoad.map { String(format: "%.0f", $0) } ?? "-")
-                            .font(.system(size: 10, weight: .bold)).foregroundColor(.teal)
-                    }
-                    HStack(spacing: 3) {
-                        Text("慢性").font(.system(size: 10)).foregroundColor(.secondary)
-                        Text(s.chronicLoad.map { String(format: "%.0f", $0) } ?? "-")
-                            .font(.system(size: 10, weight: .bold)).foregroundColor(.green)
-                    }
-                }
-            }
-            
-            // 三行进度条
-            let loads: [(String, Double, Double, Double, Color)] = [
-                ("低强度有氧", s.loadAerobicLow ?? 0, s.loadAerobicLowTargetMin ?? 0, s.loadAerobicLowTargetMax ?? 0, .teal),
-                ("高强度有氧", s.loadAerobicHigh ?? 0, s.loadAerobicHighTargetMin ?? 0, s.loadAerobicHighTargetMax ?? 0, Color(red: 0.05, green: 0.58, blue: 0.53)),
-                ("无氧", s.loadAnaerobic ?? 0, s.loadAnaerobicTargetMin ?? 0, s.loadAnaerobicTargetMax ?? 0, .orange),
-            ]
-            
-            ForEach(loads, id: \.0) { item in
-                let (name, value, tMin, tMax, color) = item
-                let maxScale = max(value, tMax) * 1.15
-                let valuePct = maxScale > 0 ? min(value / maxScale, 1.0) : 0
-                let inRange = value >= tMin && value <= tMax
-                
-                VStack(spacing: 3) {
-                    HStack {
-                        HStack(spacing: 4) {
-                            Text(name).font(.system(size: 11)).foregroundColor(.secondary)
-                            if tMin > 0 {
-                                Text("\(Int(tMin))~\(Int(tMax))")
-                                    .font(.system(size: 9)).foregroundColor(Color(UIColor.tertiaryLabel))
-                            }
-                        }
-                        Spacer()
-                        Text("\(Int(value))")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(inRange ? .green : value < tMin ? .orange : .red)
-                    }
+        let loads: [(String, Double, Double, Double, Color)] = [
+            ("低强度有氧", s.loadAerobicLow ?? 0, s.loadAerobicLowTargetMin ?? 0, s.loadAerobicLowTargetMax ?? 0, .teal),
+            ("高强度有氧", s.loadAerobicHigh ?? 0, s.loadAerobicHighTargetMin ?? 0, s.loadAerobicHighTargetMax ?? 0, .emerald),
+            ("无氧", s.loadAnaerobic ?? 0, s.loadAnaerobicTargetMin ?? 0, s.loadAnaerobicTargetMax ?? 0, .orange),
+        ]
+        let feedback = GarminLocalization.trainingLoadFeedback(s.trainingLoadFeedback)
+        let acute = s.acuteLoad.map { String(format: "%.0f", $0) } ?? "-"
+        let chronic = s.chronicLoad.map { String(format: "%.0f", $0) } ?? "-"
+        
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(loads, id: \.0) { item in
+                    let (name, value, tMin, tMax, color) = item
+                    let total = max(max(value, tMax) * 1.15, 1)
+                    let inRange = value >= tMin && value <= tMax
                     
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            // Background
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color(UIColor.systemGray5))
-                            // Value bar
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(color)
-                                .frame(width: geo.size.width * valuePct)
-                                .animation(.easeOut(duration: 0.7), value: valuePct)
-                            // Target range markers
-                            if tMin > 0 && maxScale > 0 {
-                                let tMinPct = tMin / maxScale
-                                let tMaxPct = tMax / maxScale
-                                Rectangle().fill(Color.gray.opacity(0.15))
-                                    .frame(width: geo.size.width * (tMaxPct - tMinPct))
-                                    .offset(x: geo.size.width * tMinPct)
-                                Rectangle().fill(Color.gray.opacity(0.5))
-                                    .frame(width: 1.5).offset(x: geo.size.width * tMinPct)
-                                Rectangle().fill(Color.gray.opacity(0.5))
-                                    .frame(width: 1.5).offset(x: geo.size.width * tMaxPct)
-                            }
+                    ProgressView(value: min(max(value, 0), total), total: total) {
+                        LabeledContent {
+                            Text("\(Int(value))")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(inRange ? .green : value < tMin ? .orange : .red)
+                        } label: {
+                            Text(tMin > 0 ? "\(name)（目标 \(Int(tMin))~\(Int(tMax))）" : name)
+                                .foregroundStyle(.secondary)
                         }
+                        .font(.caption)
                     }
-                    .frame(height: 10)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .tint(color)
+                }
+                
+                // 反馈信息
+                if !feedback.isEmpty {
+                    Label(feedback, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
-            
-            // 反馈信息
-            let feedback = GarminLocalization.trainingLoadFeedback(s.trainingLoadFeedback)
-            if !feedback.isEmpty {
-                HStack(spacing: 6) {
-                    Text("⚠").font(.system(size: 11))
-                    Text(feedback).font(.system(size: 11)).foregroundColor(.orange)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(8)
+        } label: {
+            LabeledContent {
+                Text("急性 \(acute) · 慢性 \(chronic)")
+                    .font(.caption)
+            } label: {
+                Label("训练负荷", systemImage: "flame.fill")
             }
         }
-        .padding(16)
-        .background(.white)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
     }
     
     // MARK: - Card 6: 今日活动
     
-    @ViewBuilder
     func todayActivityCard(_ s: GarminUserStatus) -> some View {
-        StatusCardView(icon: "figure.walk", iconColor: .teal, title: "今日活动", borderColor: .teal) {
+        StatusCardView(icon: "figure.walk", iconColor: .teal, title: "今日活动") {
             VStack(spacing: 6) {
                 metricRow("步数", s.steps.map { formatNumber($0) } ?? "-", "")
                 metricRow("活动卡路里", "\(s.caloriesActive ?? 0)", "kcal")
@@ -373,72 +247,48 @@ struct HomeView: View {
     
     // MARK: - Card 7: 睡眠
     
-    @ViewBuilder
     func sleepCard(_ s: GarminUserStatus) -> some View {
-        let scorePct = Double(s.sleepScore ?? 0) / 100.0
+        let score = Double(s.sleepScore ?? 0)
         let totalSec = s.sleepSeconds ?? 0
+        let stages: [SleepStage] = [
+            SleepStage(name: "深睡", seconds: s.sleepDeepSeconds ?? 0),
+            SleepStage(name: "浅睡", seconds: s.sleepLightSeconds ?? 0),
+            SleepStage(name: "REM", seconds: s.sleepRemSeconds ?? 0),
+            SleepStage(name: "清醒", seconds: s.sleepAwakeSeconds ?? 0),
+        ]
         
-        StatusCardView(icon: "moon.zzz.fill", iconColor: .indigo, title: "睡眠", borderColor: .indigo) {
+        return StatusCardView(icon: "moon.zzz.fill", iconColor: .indigo, title: "睡眠") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
-                    // 评分圆环
-                    ZStack {
-                        Circle().stroke(Color(UIColor.systemGray5), lineWidth: 4)
-                        Circle().trim(from: 0, to: scorePct)
-                            .stroke(
-                                scorePct > 0.7 ? Color.green : scorePct > 0.4 ? Color.orange : Color.red,
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                            )
-                            .rotationEffect(.degrees(-90))
-                            .animation(.easeOut(duration: 0.8), value: scorePct)
+                    Gauge(value: min(max(score, 0), 100), in: 0...100) {
+                        Text("睡眠评分")
+                    } currentValueLabel: {
                         Text("\(s.sleepScore ?? 0)")
-                            .font(.system(size: 14, weight: .black, design: .rounded))
                     }
-                    .frame(width: 40, height: 40)
+                    .gaugeStyle(.accessoryCircularCapacity)
+                    .tint(score > 70 ? .green : score > 40 ? .orange : .red)
                     
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 3) {
-                            Text("质量").font(.system(size: 11)).foregroundColor(.secondary)
-                            Text(GarminLocalization.sleepQuality(s.sleepQuality))
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        HStack(spacing: 3) {
-                            Text("时长").font(.system(size: 11)).foregroundColor(.secondary)
-                            Text(totalSec > 0 ? "\(totalSec / 3600)h\((totalSec % 3600) / 60)m" : "--")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
+                    VStack(spacing: 3) {
+                        metricRow("质量", GarminLocalization.sleepQuality(s.sleepQuality), "")
+                        metricRow("时长", totalSec > 0 ? "\(totalSec / 3600)h\((totalSec % 3600) / 60)m" : "--", "")
                     }
                 }
                 
                 // 阶段条
                 if totalSec > 0 {
-                    let stages: [(Int, Color, String)] = [
-                        (s.sleepDeepSeconds ?? 0, Color(red: 0.26, green: 0.22, blue: 0.79), "深睡"),
-                        (s.sleepLightSeconds ?? 0, Color(red: 0.51, green: 0.55, blue: 0.97), "浅睡"),
-                        (s.sleepRemSeconds ?? 0, Color(red: 0.75, green: 0.52, blue: 0.99), "REM"),
-                        (s.sleepAwakeSeconds ?? 0, Color(UIColor.systemGray4), "清醒"),
-                    ]
-                    
-                    HStack(spacing: 1) {
-                        ForEach(stages, id: \.2) { sec, color, _ in
-                            let pct = Double(sec) / Double(totalSec)
-                            if pct > 0 {
-                                RoundedRectangle(cornerRadius: 2).fill(color)
-                                    .frame(width: nil).layoutPriority(pct)
-                            }
-                        }
+                    Chart(stages) { stage in
+                        BarMark(x: .value("时长", stage.seconds))
+                            .foregroundStyle(by: .value("阶段", stage.name))
                     }
-                    .frame(height: 8)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    
-                    HStack(spacing: 0) {
-                        ForEach(stages, id: \.2) { _, color, label in
-                            HStack(spacing: 2) {
-                                Circle().fill(color).frame(width: 5, height: 5)
-                                Text(label).font(.system(size: 8)).foregroundColor(.secondary)
-                            }.frame(maxWidth: .infinity)
-                        }
-                    }
+                    .chartForegroundStyleScale([
+                        "深睡": Color.indigo,
+                        "浅睡": Color.blue,
+                        "REM": Color.purple,
+                        "清醒": Color.gray,
+                    ])
+                    .chartXAxis(.hidden)
+                    .chartXScale(domain: 0...max(stages.reduce(0) { $0 + $1.seconds }, 1))
+                    .frame(height: 44)
                 }
             }
         }
@@ -446,152 +296,109 @@ struct HomeView: View {
     
     // MARK: - Card 8: HRV（全宽）
     
-    @ViewBuilder
     func hrvCard(_ s: GarminUserStatus) -> some View {
-        if s.hrvLastNight != nil {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.purple)
-                        .frame(width: 26, height: 26)
-                        .background(Color.purple.opacity(0.12))
-                        .clipShape(Circle())
-                    Text("HRV").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary)
+        StatusCardView(icon: "waveform.path.ecg", iconColor: .purple, title: "HRV") {
+            HStack(alignment: .top, spacing: 16) {
+                // 左侧：大数字 + 状态
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text("\(s.hrvLastNight ?? 0)")
+                            .font(.title.weight(.bold))
+                            .fontDesign(.rounded)
+                            .foregroundStyle(.purple)
+                        Text("rMSSD").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(GarminLocalization.hrvStatus(s.hrvStatus))
+                        .font(.caption)
+                        .foregroundStyle(hrvStatusColor(s.hrvStatus))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 
-                HStack(alignment: .top, spacing: 0) {
-                    // 左侧：大数字 + 状态
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text("\(s.hrvLastNight ?? 0)")
-                                .font(.system(size: 28, weight: .black, design: .rounded))
-                                .foregroundColor(.purple)
-                            Text("rMSSD").font(.system(size: 10)).foregroundColor(.secondary)
-                        }
-                        Text(GarminLocalization.hrvStatus(s.hrvStatus))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(hrvStatusColor(s.hrvStatus))
+                // 右侧：详细指标行
+                VStack(spacing: 8) {
+                    metricRow("7日均值", "\(s.hrvWeeklyAvg ?? 0)", "")
+                    metricRow("5分峰值", "\(s.hrv5minHigh ?? 0)", "")
+                    if let lo = s.hrvBaselineLow, let hi = s.hrvBaselineHigh {
+                        metricRow("基线范围", "\(lo) ~ \(hi)", "")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    // 右侧：详细指标行
-                    VStack(spacing: 8) {
-                        HRVMetricRow(label: "7日均值", value: "\(s.hrvWeeklyAvg ?? 0)")
-                        HRVMetricRow(label: "5分峰值", value: "\(s.hrv5minHigh ?? 0)")
-                        if let lo = s.hrvBaselineLow, let hi = s.hrvBaselineHigh {
-                            HRVMetricRow(label: "基线范围", value: "\(lo) ~ \(hi)")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity)
             }
-            .padding(16)
-            .background(.white)
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
         }
     }
     
     // MARK: - AI 分析
     
     var analysisSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.linearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Text("最近 AI 分析").font(.system(size: 17, weight: .semibold))
-            }
-            .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 12) {
+            Label("最近 AI 分析", systemImage: "sparkles")
+                .font(.headline)
             
             ForEach(recentActivities) { act in
                 NavigationLink(destination: ActivityDetailView(activityId: act.id)) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        // 活动标题行
-                        HStack(spacing: 10) {
-                            Text(sportIcon(act.sport))
-                                .font(.system(size: 20))
-                                .frame(width: 36, height: 36)
-                                .background(sportColor(act.sport).opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(act.activityName ?? "活动")
-                                    .font(.system(size: 14, weight: .semibold)).foregroundColor(.primary)
-                                    .lineLimit(1)
-                                HStack(spacing: 4) {
-                                    Text(act.startTimeLocal ?? "").font(.system(size: 11)).foregroundColor(.secondary)
-                                    Text("·").foregroundColor(.secondary)
-                                    Text(sportLabel(act.sport)).font(.system(size: 11)).foregroundColor(.secondary)
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 10) {
+                            // 活动指标
+                            HStack(spacing: 0) {
+                                if let d = act.distance {
+                                    StatPill(value: String(format: "%.1f", d / 1000), unit: "km", label: "距离")
+                                }
+                                if let t = act.duration {
+                                    let h = Int(t) / 3600; let m = (Int(t) % 3600) / 60
+                                    StatPill(value: h > 0 ? "\(h)h\(m)m" : "\(m)m", label: "时间")
+                                }
+                                if let hr = act.avgHeartRate {
+                                    StatPill(value: "\(hr)", unit: "bpm", label: "心率")
+                                }
+                                if let p = act.avgPower {
+                                    StatPill(value: "\(p)", unit: "W", label: "功率")
                                 }
                             }
-                            Spacer()
-                        }
-                        
-                        // 活动指标
-                        HStack(spacing: 12) {
-                            if let d = act.distance {
-                                MiniStat(value: String(format: "%.1f", d / 1000), unit: "km", label: "距离")
-                            }
-                            if let t = act.duration {
-                                let h = Int(t) / 3600; let m = (Int(t) % 3600) / 60
-                                MiniStat(value: h > 0 ? "\(h)h\(m)m" : "\(m)m", unit: "", label: "时间")
-                            }
-                            if let hr = act.avgHeartRate {
-                                MiniStat(value: "\(hr)", unit: "bpm", label: "心率")
-                            }
-                            if let p = act.avgPower {
-                                MiniStat(value: "\(p)", unit: "W", label: "功率")
-                            }
-                        }
-                        
-                        // AI 摘要
-                        if let summaryJson = act.analysisSummary,
-                           let data = summaryJson.data(using: .utf8),
-                           let summary = try? JSONDecoder().decode(AnalysisSummary.self, from: data) {
                             
-                            if let conclusion = summary.conclusion, !conclusion.isEmpty {
-                                HStack(alignment: .top, spacing: 6) {
-                                    Image(systemName: "sparkle")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.orange)
-                                        .padding(.top, 2)
-                                    Text(conclusion)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
+                            // AI 摘要
+                            if let summaryJson = act.analysisSummary,
+                               let data = summaryJson.data(using: .utf8),
+                               let summary = try? JSONDecoder().decode(AnalysisSummary.self, from: data) {
+                                
+                                if let conclusion = summary.conclusion, !conclusion.isEmpty {
+                                    Label(conclusion, systemImage: "sparkle")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(2)
-                                        .lineSpacing(2)
                                 }
-                            }
-                            
-                            // 标签
-                            let tags = (summary.strengths ?? []).map { ("✓", $0, Color.green) }
-                                + (summary.improvements ?? []).map { ("⚠", $0, Color.orange) }
-                            if !tags.isEmpty {
-                                FlowLayout(spacing: 6) {
-                                    ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
-                                        HStack(alignment: .top, spacing: 3) {
-                                            Text(tag.0).font(.system(size: 9)).padding(.top, 2)
-                                            Text(tag.1)
-                                                .font(.system(size: 10, weight: .medium))
-                                                .multilineTextAlignment(.leading)
-                                                .lineLimit(3)
+                                
+                                // 标签
+                                let strengths = summary.strengths ?? []
+                                let improvements = summary.improvements ?? []
+                                if !strengths.isEmpty || !improvements.isEmpty {
+                                    FlowLayout(spacing: 6) {
+                                        ForEach(Array(strengths.enumerated()), id: \.offset) { _, tag in
+                                            SummaryTag(text: tag, systemImage: "checkmark.circle.fill", color: .green)
                                         }
-                                        .padding(.horizontal, 8).padding(.vertical, 4)
-                                        .background(tag.2.opacity(0.1))
-                                        .foregroundColor(tag.2)
-                                        .cornerRadius(8)
+                                        ForEach(Array(improvements.enumerated()), id: \.offset) { _, tag in
+                                            SummaryTag(text: tag, systemImage: "exclamationmark.triangle.fill", color: .orange)
+                                        }
                                     }
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } label: {
+                        LabeledContent {
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        } label: {
+                            Text("\(sportIcon(act.sport)) \(act.activityName ?? "活动")")
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text("\(act.startTimeLocal ?? "") · \(sportLabel(act.sport))")
+                                .font(.caption)
+                        }
                     }
-                    .padding(14)
-                    .background(.white)
-                    .cornerRadius(16)
-                    .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal)
         }
     }
     
@@ -624,18 +431,18 @@ struct HomeView: View {
     
     // MARK: - Helpers
     
-    @ViewBuilder
     func metricRow(_ label: String, _ value: String, _ unit: String) -> some View {
-        HStack {
-            Text(label).font(.system(size: 12)).foregroundColor(.secondary)
-            Spacer()
+        LabeledContent {
             HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value).font(.system(size: 14, weight: .semibold))
+                Text(value).fontWeight(.semibold).foregroundStyle(.primary)
                 if !unit.isEmpty {
-                    Text(unit).font(.system(size: 10)).foregroundColor(.secondary)
+                    Text(unit).font(.caption2)
                 }
             }
+        } label: {
+            Text(label).foregroundStyle(.secondary)
         }
+        .font(.footnote)
     }
     
     private func acwrColor(_ status: String?) -> Color {
@@ -742,7 +549,6 @@ struct HomeView: View {
     
     // MARK: - Daily Check Card
     
-    @ViewBuilder
     private func dailyCheckHomeCard(check: DailyCheckItem) -> some View {
         let actionLabels: [String: (text: String, color: Color)] = [
             "proceed": ("按计划执行", .green),
@@ -753,105 +559,55 @@ struct HomeView: View {
             "on_track": ("执行良好", .green),
         ]
         let info = actionLabels[check.action ?? ""] ?? ("AI 建议", .teal)
+        let isExpanded = Binding(
+            get: { !dailyCheckCollapsed },
+            set: { dailyCheckCollapsed = !$0 }
+        )
         
-        if dailyCheckCollapsed {
-            // 收缩为一行，点击可展开
-            Button(action: { withAnimation { dailyCheckCollapsed = false } }) {
-                HStack(spacing: 8) {
-                    Text(check.checkType == "morning" ? "🌅" : "🌙")
-                    Text(info.text)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(info.color)
-                    Spacer()
-                    Text("点击查看")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.teal.opacity(0.04))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.teal.opacity(0.2), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-        } else {
-            // 展开状态
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(check.checkType == "morning" ? "🌅 晨检建议" : "🌙 晚检建议")
-                        .font(.system(size: 14, weight: .bold))
-                    Spacer()
-                    Text(info.text)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(info.color)
-                        .cornerRadius(6)
-                }
-                
-                if let rec = check.recommendation {
-                    let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
-                    let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                    VStack(alignment: .leading, spacing: 4) {
+        return GroupBox {
+            DisclosureGroup(isExpanded: isExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let rec = check.recommendation {
+                        let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
+                        let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
                         Text(body.isEmpty ? rec : body)
-                            .font(.system(size: 13))
-                            .foregroundColor(.primary)
+                            .font(.subheadline)
                             .lineLimit(dailyCheckExpanded ? nil : 4)
                         
-                        Button(action: { withAnimation { dailyCheckExpanded.toggle() } }) {
-                            Text(dailyCheckExpanded ? "收起" : "展开全部")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.teal)
+                        Button(dailyCheckExpanded ? "收起" : "展开全部") {
+                            withAnimation { dailyCheckExpanded.toggle() }
                         }
+                        .buttonStyle(.borderless)
+                        .font(.footnote)
                     }
+                    
+                    HStack(spacing: 10) {
+                        if let adjustments = check.adjustments, !adjustments.isEmpty {
+                            Button("执行调整") { applyDailyCheckAndGoTraining() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("知道了") { respondAndCollapse("accepted") }
+                            .buttonStyle(.bordered)
+                        Button("忽略") { respondAndCollapse("ignored") }
+                            .buttonStyle(.bordered)
+                            .tint(.secondary)
+                    }
+                    .controlSize(.small)
                 }
-                
-                HStack(spacing: 10) {
-                    if let adjustments = check.adjustments, !adjustments.isEmpty {
-                        Button(action: { applyDailyCheckAndGoTraining() }) {
-                            Text("执行调整")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.purple)
-                                .cornerRadius(8)
-                        }
-                    }
-                    Button(action: { respondAndCollapse("accepted") }) {
-                        Text("知道了")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.teal)
-                            .cornerRadius(8)
-                    }
-                    Button(action: { respondAndCollapse("ignored") }) {
-                        Text("忽略")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color(UIColor.systemGray5))
-                            .cornerRadius(8)
-                    }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+            } label: {
+                LabeledContent {
+                    Text(info.text)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(info.color)
+                } label: {
+                    Label(check.checkType == "morning" ? "晨检建议" : "晚检建议",
+                          systemImage: check.checkType == "morning" ? "sunrise.fill" : "moon.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.primary)
                 }
             }
-            .padding(14)
-            .background(Color.teal.opacity(0.06))
-            .cornerRadius(14)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.teal.opacity(0.3), lineWidth: 1)
-            )
         }
     }
     
@@ -887,112 +643,29 @@ struct StatusCardView<Content: View>: View {
     let icon: String
     let iconColor: Color
     let title: String
-    let borderColor: Color
     @ViewBuilder let content: () -> Content
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(iconColor)
-                    .frame(width: 24, height: 24)
-                    .background(iconColor.opacity(0.12))
-                    .clipShape(Circle())
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundColor(.secondary)
-            }
+        GroupBox {
             content()
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(14)
-        .background(.white)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(UIColor.systemGray5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
-    }
-}
-
-// MARK: - Mini Metric Cell
-
-struct MiniMetricCell: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-            Text(label)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(UIColor.systemGray6))
-        .cornerRadius(10)
-    }
-}
-
-// MARK: - HRV Metric Row
-
-struct HRVMetricRow: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-        }
-    }
-}
-
-// MARK: - Mini Stat
-
-struct MiniStat: View {
-    let value: String
-    let unit: String
-    let label: String
-    
-    var body: some View {
-        VStack(spacing: 2) {
-            HStack(alignment: .lastTextBaseline, spacing: 1) {
-                Text(value).font(.system(size: 13, weight: .bold, design: .rounded))
-                if !unit.isEmpty {
-                    Text(unit).font(.system(size: 9)).foregroundColor(.secondary)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } label: {
+            Label {
+                Text(title).foregroundStyle(.secondary)
+            } icon: {
+                Image(systemName: icon).foregroundStyle(iconColor)
             }
-            Text(label).font(.system(size: 9)).foregroundColor(.secondary)
+            .font(.subheadline.weight(.medium))
         }
     }
 }
 
-struct EqualHeightHStack: Layout {
-    var spacing: CGFloat = 12
-    
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 0
-        let maxHeight = subviews.map { $0.sizeThatFits(.init(width: (width - spacing * CGFloat(subviews.count - 1)) / CGFloat(subviews.count), height: nil)).height }.max() ?? 0
-        return CGSize(width: width, height: maxHeight)
-    }
-    
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let count = CGFloat(subviews.count)
-        let childWidth = (bounds.width - spacing * (count - 1)) / count
-        var x = bounds.minX
-        for subview in subviews {
-            subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: .init(width: childWidth, height: bounds.height))
-            x += childWidth + spacing
-        }
-    }
+// MARK: - Sleep Stage
+
+struct SleepStage: Identifiable {
+    let name: String
+    let seconds: Int
+    var id: String { name }
 }
 
 // MARK: - Color Extensions
@@ -1008,34 +681,9 @@ struct PillBadge: View {
     let color: Color
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(.caption2.weight(.bold))
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .foregroundColor(color)
-            .clipShape(Capsule())
-    }
-}
-
-// MARK: - Simple Badge (used across views)
-
-struct Badge: View {
-    let text: String
-    let color: Color
-    var body: some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .cornerRadius(8)
-    }
-}
-
-// MARK: - Scroll Offset Key
-
-struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+            .background(color.opacity(0.12), in: Capsule())
+            .foregroundStyle(color)
     }
 }

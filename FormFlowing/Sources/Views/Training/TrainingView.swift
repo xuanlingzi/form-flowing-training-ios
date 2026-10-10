@@ -152,7 +152,6 @@ struct TrainingView: View {
     @State private var genForm = GeneratePlanForm()
     @State private var generating = false
     @State private var pollingTask: Task<Void, Never>?
-    @State private var scrollOffset: CGFloat = 0
     
     // 目标驱动计划
     @State private var showProgressSheet = false
@@ -166,12 +165,7 @@ struct TrainingView: View {
     @State private var dailyCheck: DailyCheckItem? = nil
     @State private var dailyCheckExpanded = false
     
-    private var collapseProgress: CGFloat {
-        min(max(scrollOffset / 60, 0), 1)
-    }
-    
     private let calendar = Calendar.current
-    private let weekdayLabels = ["一", "二", "三", "四", "五", "六", "日"]
     
     var monthTitle: String {
         let formatter = DateFormatter()
@@ -232,111 +226,54 @@ struct TrainingView: View {
         !(plans.count > 1 && plans.contains(where: isAIGeneratedPlan))
     }
     
+    private var goalDrivenPlan: TrainingPlan? {
+        guard let plan = selectedPlan ?? plans.first(where: { $0.status == "active" }),
+              plan.mode == "goal_driven" else { return nil }
+        return plan
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 顶部标题栏（Apple Music 风格：静态大标题 + 右侧操作）
-                HStack(alignment: .center) {
-                    Text("训练课程")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    Spacer(minLength: 16)
-                    
-                    // 目标驱动计划操作按钮
-                    if let plan = selectedPlan ?? plans.first(where: { $0.status == "active" }),
-                       plan.mode == "goal_driven" {
-                        HStack(spacing: 12) {
-                            Button(action: { loadProgress(planId: plan.trainingPlanId) }) {
-                                Text("进度")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.teal)
-                            }
-                            Button(action: { showExtendAlert = true }) {
-                                Text("续期")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.orange)
-                            }
-                            Button(action: { showReviewAlert = true }) {
-                                Text("复盘")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.purple)
-                            }
-                        }
-                    }
-                    
-                    if !plans.isEmpty {
-                        Button(action: { showPlanDetailsSheet = true }) {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.system(size: 22))
-                                .foregroundColor(.primary)
-                                .frame(width: 32, height: 32)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .frame(height: 44)
-                .background(Color(UIColor.systemBackground))
-                
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(spacing: 16) {
-                        if loading {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                Text("加载训练数据...")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
+            ScrollView {
+                VStack(spacing: 16) {
+                    if loading {
+                        ProgressView("加载训练数据...")
                             .padding(.top, 100)
-                        } else if generating {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                Text("AI 正在为您生成训练计划...").font(.subheadline).foregroundColor(.secondary)
-                            }
+                    } else if generating {
+                        ProgressView("AI 正在为您生成训练计划...")
                             .padding(.top, 60)
                     } else if adjustingSchedule {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("正在调整排期并同步至佳明...").font(.subheadline).foregroundColor(.secondary)
-                        }
-                        .padding(.top, 60)
+                        ProgressView("正在调整排期并同步至佳明...")
+                            .padding(.top, 60)
                     } else {
                         // 日期切换器
                         HStack {
                             Button(action: prevDay) {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                                    .padding(.trailing, 16)
+                                Label("前一天", systemImage: "chevron.left")
+                                    .labelStyle(.iconOnly)
                             }
-                            
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.circle)
+
                             Spacer()
-                            
-                            Button(action: { showCalendarSheet = true }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "calendar")
-                                        .font(.system(size: 15))
-                                    Text(selectedDateTitle)
-                                }
-                                .font(.headline)
-                                .foregroundColor(.primary)
+
+                            Button {
+                                showCalendarSheet = true
+                            } label: {
+                                Label(selectedDateTitle, systemImage: "calendar")
+                                    .font(.headline)
                             }
-                            
+
                             Spacer()
-                            
+
                             Button(action: nextDay) {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                                    .padding(.leading, 16)
+                                Label("后一天", systemImage: "chevron.right")
+                                    .labelStyle(.iconOnly)
                             }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.circle)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom)
-                        
+
                         // 1. 直切主题：当日训练卡片流
                         ZStack {
                             if !selectedDateWorkouts.isEmpty {
@@ -344,7 +281,7 @@ struct TrainingView: View {
                                     ForEach(Array(selectedDateWorkouts.enumerated()), id: \.element.id) { idx, workout in
                                         let planMeta = workoutPlanMetaByWorkoutId[workout.trainingPlanWorkoutId]
                                         WorkoutCardView(
-                                            workout: workout, 
+                                            workout: workout,
                                             initiallyExpanded: plans.count == 1 && selectedDateWorkouts.count == 1 && idx == 0,
                                             planTitle: planMeta?.title,
                                             planIntro: planMeta?.intro,
@@ -359,52 +296,59 @@ struct TrainingView: View {
                                         )
                                     }
                                 }
-                                .padding(.horizontal)
                                 .transition(.push(from: swipeDirection == .forward ? .trailing : .leading))
                                 .id(selectedDate ?? "")
                             } else {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "cup.and.saucer")
-                                        .font(.title)
-                                    Text("今日暂无训练安排")
-                                        .font(.subheadline)
-                                }
-                                .foregroundColor(Color(UIColor.tertiaryLabel))
-                                .frame(maxWidth: .infinity, minHeight: 140)
-                                .transition(.push(from: swipeDirection == .forward ? .trailing : .leading))
-                                .id(selectedDate ?? "")
+                                ContentUnavailableView("今日暂无训练安排", systemImage: "cup.and.saucer")
+                                    .transition(.push(from: swipeDirection == .forward ? .trailing : .leading))
+                                    .id(selectedDate ?? "")
                             }
                         }
                         .animation(.easeInOut(duration: 0.3), value: selectedDate)
-                        
+
                         // 4. 底部操作面板（随内容滚动）
                         bottomActions
                     }
                 }
-                .padding(.vertical)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ScrollOffsetKey.self,
-                            value: -geo.frame(in: .named("trainingScroll")).origin.y
-                        )
+                .frame(maxWidth: .infinity)
+                .padding()
+                .backgroundStyle(Color(.secondarySystemGroupedBackground))
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("训练课程")
+            .toolbar {
+                if !plans.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            if let plan = goalDrivenPlan {
+                                Section {
+                                    Button("进度", systemImage: "chart.line.uptrend.xyaxis") {
+                                        loadProgress(planId: plan.trainingPlanId)
+                                    }
+                                    Button("续期", systemImage: "calendar.badge.plus") {
+                                        showExtendAlert = true
+                                    }
+                                    Button("复盘", systemImage: "checklist") {
+                                        showReviewAlert = true
+                                    }
+                                }
+                            }
+                            Button("计划详情", systemImage: "list.bullet.rectangle") {
+                                showPlanDetailsSheet = true
+                            }
+                        } label: {
+                            Label("更多", systemImage: "ellipsis")
+                        }
                     }
-                )
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .coordinateSpace(name: "trainingScroll")
-            .onPreferenceChange(ScrollOffsetKey.self) { value in
-                scrollOffset = value
-            }
-            .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await loadData() }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 40)
                     .onEnded { value in
                          if abs(value.translation.width) > abs(value.translation.height) {
                              if value.translation.width < -40 {
-                                 nextDay() // Swipe Left 
+                                 nextDay() // Swipe Left
                              } else if value.translation.width > 40 {
                                  prevDay() // Swipe Right
                              }
@@ -422,47 +366,26 @@ struct TrainingView: View {
                     generating: $generating,
                     onGenerate: generatePlan
                 )
-                .presentationDetents([.fraction(0.8), .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showCalendarSheet) {
-                NavigationView {
+                NavigationStack {
                     ScrollView {
-                        VStack(spacing: 12) {
-                            HStack(spacing: 12) {
-                                Button(action: prevMonth) {
-                                    Image(systemName: "chevron.left")
-                                        .font(.headline.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                        .frame(width: 32, height: 32)
-                                }
-                                .buttonStyle(.plain)
-
-                                Spacer()
-
-                                Text(monthTitle)
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Button(action: nextMonth) {
-                                    Image(systemName: "chevron.right")
-                                        .font(.headline.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                        .frame(width: 32, height: 32)
-                                }
-                                .buttonStyle(.plain)
+                        WorkoutCalendarView(
+                            workoutDates: workoutDates,
+                            selectedDate: selectedDate
+                        ) { d in
+                            if let curr = selectedDate, let currDate = dateFromString(curr), let newDate = dateFromString(d) {
+                                swipeDirection = newDate > currDate ? .forward : .backward
                             }
-
-                            calendarView
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                                selectedDate = d
+                                showCalendarSheet = false
+                            }
                         }
-                            .padding()
-                            .background(Color.white)
-                            .cornerRadius(20)
-                            .padding()
+                        .padding(.horizontal)
                     }
-                    .background(Color(UIColor.systemGroupedBackground))
                     .navigationTitle("训练日历")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -475,126 +398,74 @@ struct TrainingView: View {
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPlanDetailsSheet) {
-                NavigationView {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            if plans.count > 1 {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("训练计划")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.secondary)
+                NavigationStack {
+                    List {
+                        if plans.count > 1 {
+                            Section("训练计划") {
+                                planSelectionRow(
+                                    title: "全部计划",
+                                    isSelected: selectedPlan == nil,
+                                    action: {
+                                        selectedPlan = nil
+                                    }
+                                )
 
-                                    VStack(spacing: 10) {
-                                        planSelectionRow(
-                                            title: "全部计划",
-                                            isSelected: selectedPlan == nil,
-                                            action: {
-                                                selectedPlan = nil
+                                ForEach(plans) { item in
+                                    planSelectionRow(
+                                        title: (item.mode == "goal_driven" ? "🎯 " : "") + item.planName,
+                                        isSelected: selectedPlan?.trainingPlanId == item.trainingPlanId,
+                                        action: {
+                                            selectedPlan = item
+                                            if let startDate = item.startDate, let d = dateFromString(startDate) {
+                                                currentMonth = d
                                             }
-                                        )
-
-                                        ForEach(plans) { item in
-                                            planSelectionRow(
-                                                title: (item.mode == "goal_driven" ? "🎯 " : "") + item.planName,
-                                                isSelected: selectedPlan?.trainingPlanId == item.trainingPlanId,
-                                                action: {
-                                                    selectedPlan = item
-                                                    if let startDate = item.startDate, let d = dateFromString(startDate) {
-                                                        currentMonth = d
-                                                    }
-                                                },
-                                                deleteAction: {
-                                                    planToDelete = item
-                                                    showDeleteAlert = true
-                                                }
-                                            )
                                         }
-                                    }
-                                    .padding(12)
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                }
-                            }
-                            
-                            if let detailPlan = selectedPlan ?? (plans.count == 1 ? sheetPlan : nil) {
-                                Divider()
-
-                                Text(detailPlan.planName)
-                                    .font(.title2.weight(.bold))
-
-                                if let weeks = detailPlan.durationWeeks {
-                                    HStack {
-                                        Image(systemName: "calendar.badge.clock")
-                                        Text("\(weeks) 周周期")
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                }
-
-                                Divider()
-
-                                if let desc = formatPlanDescription(detailPlan) {
-                                    Text(desc)
-                                        .font(.system(size: 15))
-                                        .foregroundColor(.primary)
-                                        .lineSpacing(4)
-                                }
-                            }
-
-                            if let plan = sheetPlan {
-                                VStack(spacing: 12) {
-                                    Button(action: {
-                                        pushToGarmin(plan)
-                                    }) {
-                                        HStack {
-                                            Image(systemName: "arrow.up.circle")
-                                            Text("将近期训练推至佳明日历")
-                                        }
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 14)
-                                        .background(Color.teal)
-                                        .cornerRadius(12)
-                                    }
-                                    
-                                    Button(action: {
-                                        planToRegenerate = plan
-                                    }) {
-                                        HStack {
-                                            Image(systemName: "sparkles")
-                                            Text("重新生成计划")
-                                        }
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 14)
-                                        .background(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
-                                        .cornerRadius(12)
-                                    }
-                                    
-                                    if shouldShowBottomDeletePlanButton {
-                                        Button(action: {
-                                            planToDelete = plan
+                                    )
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button("删除", systemImage: "trash", role: .destructive) {
+                                            planToDelete = item
                                             showDeleteAlert = true
-                                        }) {
-                                            HStack {
-                                                Image(systemName: "trash")
-                                                Text("删除计划")
-                                            }
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(.red)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 14)
-                                            .background(Color.red.opacity(0.1))
-                                            .cornerRadius(12)
                                         }
                                     }
                                 }
                             }
                         }
-                        .padding(20)
-                        .padding(.bottom, 28)
+
+                        if let detailPlan = selectedPlan ?? (plans.count == 1 ? sheetPlan : nil) {
+                            Section(detailPlan.planName) {
+                                if let weeks = detailPlan.durationWeeks {
+                                    LabeledContent {
+                                        Text("\(weeks) 周")
+                                    } label: {
+                                        Label("周期", systemImage: "calendar.badge.clock")
+                                    }
+                                }
+
+                                if let desc = formatPlanDescription(detailPlan) {
+                                    Text(desc)
+                                        .font(.subheadline)
+                                }
+                            }
+                        }
+
+                        if let plan = sheetPlan {
+                            Section {
+                                Button("将近期训练推至佳明日历", systemImage: "arrow.up.circle") {
+                                    pushToGarmin(plan)
+                                }
+
+                                Button("重新生成计划", systemImage: "sparkles") {
+                                    planToRegenerate = plan
+                                }
+
+                                if shouldShowBottomDeletePlanButton {
+                                    Button("删除计划", systemImage: "trash", role: .destructive) {
+                                        planToDelete = plan
+                                        showDeleteAlert = true
+                                    }
+                                }
+                            }
+                        }
                     }
                     .navigationTitle("计划详情")
                     .navigationBarTitleDisplayMode(.inline)
@@ -625,7 +496,7 @@ struct TrainingView: View {
                             generating: $generating,
                             onGenerate: generatePlan
                         )
-                        .presentationDetents([.fraction(0.8), .large])
+                        .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                     }
                 }
@@ -647,7 +518,7 @@ struct TrainingView: View {
                 get: { workoutToCancel != nil },
                 set: { if !$0 { workoutToCancel = nil } }
             )) {
-                Button("删除本次", role: .destructive) { 
+                Button("删除本次", role: .destructive) {
                     if let w = workoutToCancel { cancelSchedule(workout: w) }
                     workoutToCancel = nil
                 }
@@ -672,85 +543,45 @@ struct TrainingView: View {
                 set: { if !$0 { workoutToMove = nil } }
             )) {
                 if let wk = workoutToMove {
-                    NavigationView {
-                        VStack(spacing: 20) {
+                    NavigationStack {
+                        Form {
                             // 当前课程信息
-                            VStack(spacing: 6) {
-                                let cfg = sportConfig[wk.sport ?? ""] ?? ("🏃", .gray, "活动")
-                                HStack(spacing: 8) {
-                                    Text(cfg.icon).font(.title2)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(wk.workoutName ?? "训练课程")
-                                            .font(.headline)
-                                        Text("当前日期: \(wk.workoutDate ?? "未知")")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
+                            Section {
+                                LabeledContent {
+                                    Text(wk.workoutDate ?? "未知")
+                                } label: {
+                                    Text("\((sportConfig[wk.sport ?? ""] ?? ("🏃", .gray, "活动")).icon) \(wk.workoutName ?? "训练课程")")
+                                    Text("当前日期")
                                 }
-                                .padding()
-                                .background(Color(UIColor.systemGray6))
-                                .cornerRadius(12)
-                                
+                            } footer: {
                                 if wk.garminScheduleId != nil {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(.orange)
-                                            .font(.caption)
-                                        Text("该课程已同步到 Garmin，移动后将同时更新 Garmin 日历")
-                                            .font(.caption)
-                                            .foregroundColor(.orange)
-                                    }
-                                    .padding(.horizontal)
+                                    Label("该课程已同步到 Garmin，移动后将同时更新 Garmin 日历", systemImage: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
                                 }
                             }
-                            
+
                             // 日期选择
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("选择目标日期")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal)
-                                
+                            Section("选择目标日期") {
                                 DatePicker(
                                     "目标日期",
                                     selection: $moveTargetDate,
                                     displayedComponents: .date
                                 )
                                 .datePickerStyle(.graphical)
-                                .tint(.teal)
-                                .padding(.horizontal)
                             }
-                            
-                            Spacer()
-                            
-                            // 确认按钮
-                            Button(action: {
-                                let wkToMove = wk
-                                workoutToMove = nil
-                                rescheduleWorkout(workout: wkToMove, to: moveTargetDate)
-                            }) {
-                                HStack {
-                                    Image(systemName: "arrow.right.circle.fill")
-                                    let f = DateFormatter()
-                                    let _ = f.dateFormat = "M月d日"
-                                    Text("移动到 \(f.string(from: moveTargetDate))")
-                                }
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.teal)
-                                .cornerRadius(12)
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom)
                         }
                         .navigationTitle("移动训练课程")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("取消") { workoutToMove = nil }
+                            }
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("移动") {
+                                    let wkToMove = wk
+                                    workoutToMove = nil
+                                    rescheduleWorkout(workout: wkToMove, to: moveTargetDate)
+                                }
                             }
                         }
                     }
@@ -785,189 +616,50 @@ struct TrainingView: View {
             } message: {
                 Text("AI 将对当前周期的训练执行情况进行分析，更新进度评估。")
             }
-            }
         }
     }
-    
-    // Note: old trainingHeader removed
-    
-    // MARK: - 底部悬浮按钮
-    
-    private var bottomActions: some View {
-        Group {
-            if plans.isEmpty {
-                HStack(spacing: 12) {
-                    Button(action: { showGenSheet = true }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                            Text("AI 生成计划")
-                        }
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .cornerRadius(12)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical)
-            }
-        }
-    }
-    
-    // MARK: - Calendar
 
-    var calendarView: some View {
-        VStack(spacing: 4) {
-            HStack {
-                ForEach(weekdayLabels, id: \.self) { d in
-                    Text(d).font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            
-            let days = generateCalendarDays()
-            ForEach(0..<(days.count / 7 + (days.count % 7 > 0 ? 1 : 0)), id: \.self) { week in
-                HStack(spacing: 2) {
-                    ForEach(0..<7, id: \.self) { day in
-                        let idx = week * 7 + day
-                        if idx < days.count, let d = days[idx] {
-                            let hasWorkout = workoutDates.contains(d)
-                            let isToday = d == todayStr()
-                            let isSelected = d == selectedDate
-                            let dayWorkouts = visibleWorkouts.filter { $0.workoutDate == d }
-                            
-                            Button(action: { 
-                                if let curr = selectedDate, let currDate = dateFromString(curr), let newDate = dateFromString(d) {
-                                    swipeDirection = newDate > currDate ? .forward : .backward
-                                }
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
-                                    selectedDate = d 
-                                    showCalendarSheet = false
-                                }
-                            }) {
-                                VStack(spacing: 2) {
-                                    Text(dayNumber(d))
-                                        .font(.system(size: 12, weight: isToday ? .bold : .regular))
-                                        .foregroundColor(isSelected ? .white : isToday ? .teal : .primary)
-                                    
-                                    // 运动类型小图标
-                                    if hasWorkout {
-                                        HStack(spacing: 1) {
-                                            let sports = Set(dayWorkouts.compactMap { $0.sport })
-                                            ForEach(Array(sports.prefix(2)), id: \.self) { sport in
-                                                Text(sportConfig[sport]?.icon ?? "🏃")
-                                                    .font(.system(size: 7))
-                                            }
-                                        }
-                                    } else {
-                                        Text(" ").font(.system(size: 7))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 42)
-                                .background(
-                                    isSelected ? Color.teal :
-                                    isToday ? Color.teal.opacity(0.15) :
-                                    hasWorkout ? Color.teal.opacity(0.06) : Color.clear
-                                )
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Text("").frame(maxWidth: .infinity, minHeight: 42)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(12).background(.white).cornerRadius(14)
-    }
+    // MARK: - 底部操作
 
     @ViewBuilder
+    private var bottomActions: some View {
+        if plans.isEmpty {
+            Button {
+                showGenSheet = true
+            } label: {
+                Label("AI 生成计划", systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
     private func planSelectionRow(
         title: String,
         isSelected: Bool,
-        action: @escaping () -> Void,
-        deleteAction: (() -> Void)? = nil
+        action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 10) {
-            Button(action: action) {
-                HStack(spacing: 12) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    Spacer()
-
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.teal)
-                    }
+        Button(action: action) {
+            LabeledContent {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                        .accessibilityLabel("已选中")
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(isSelected ? Color.teal.opacity(0.12) : Color(UIColor.systemBackground))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(isSelected ? Color.teal.opacity(0.35) : Color.clear, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-
-            if let deleteAction {
-                Button(role: .destructive, action: deleteAction) {
-                    Image(systemName: "trash")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.red)
-                        .frame(width: 40, height: 40)
-                        .background(Color.red.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain)
+            } label: {
+                Text(title)
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
             }
         }
     }
-    
+
     var workoutDates: Set<String> {
         Set(visibleWorkouts.compactMap { $0.workoutDate })
     }
     
     // MARK: - Calendar Helpers
-    
-    private func generateCalendarDays() -> [String?] {
-        let comps = calendar.dateComponents([.year, .month], from: currentMonth)
-        guard let firstDay = calendar.date(from: comps),
-              let range = calendar.range(of: .day, in: .month, for: firstDay) else { return [] }
-        
-        let weekday = calendar.component(.weekday, from: firstDay)
-        let offset = (weekday + 5) % 7
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        
-        var days: [String?] = Array(repeating: nil, count: offset)
-        for d in range {
-            let date = calendar.date(byAdding: .day, value: d - 1, to: firstDay)!
-            days.append(formatter.string(from: date))
-        }
-        return days
-    }
-    
-    private func dayNumber(_ dateStr: String) -> String {
-        if let day = Int(dateStr.suffix(2)) {
-            return String(day)
-        }
-        return String(dateStr.suffix(2))
-    }
     
     private func todayStr() -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
@@ -977,14 +669,6 @@ struct TrainingView: View {
     private func isAIGeneratedPlan(_ plan: TrainingPlan) -> Bool {
         let source = plan.source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         return source.contains("ai")
-    }
-    
-    private func prevMonth() {
-        currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth) ?? currentMonth
-    }
-    
-    private func nextMonth() {
-        currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) ?? currentMonth
     }
     
     private func prevDay() {
@@ -1473,98 +1157,6 @@ struct TrainingView: View {
         }
     }
     
-    @ViewBuilder
-    private func dailyCheckCard(check: DailyCheckItem) -> some View {
-        let actionLabels: [String: (text: String, color: Color)] = [
-            "proceed": ("按计划执行", .green),
-            "modify": ("建议调整", .orange),
-            "skip": ("建议休息", .red),
-            "reschedule": ("建议改期", .blue),
-            "no_change": ("保持原计划", .green),
-        ]
-        let info = actionLabels[check.action ?? ""] ?? ("AI 建议", .teal)
-        
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(check.checkType == "morning" ? "🌅 晨检建议" : "🌙 晚检建议")
-                    .font(.system(size: 14, weight: .bold))
-                Spacer()
-                Text(info.text)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(info.color)
-                    .cornerRadius(6)
-            }
-            
-            if let rec = check.recommendation {
-                // 显示第一行之后的内容（第一行是 action）
-                let lines = rec.split(separator: "\n", omittingEmptySubsequences: false)
-                let body = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(body.isEmpty ? rec : body)
-                        .font(.system(size: 13))
-                        .foregroundColor(.primary)
-                        .lineLimit(dailyCheckExpanded ? nil : 4)
-                    
-                    if !dailyCheckExpanded {
-                        Button(action: { withAnimation { dailyCheckExpanded = true } }) {
-                            Text("展开全部")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.teal)
-                        }
-                    } else {
-                        Button(action: { withAnimation { dailyCheckExpanded = false } }) {
-                            Text("收起")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.teal)
-                        }
-                    }
-                }
-            }
-            
-            HStack(spacing: 12) {
-                if let adjustments = check.adjustments, !adjustments.isEmpty {
-                    Button(action: { applyDailyCheck() }) {
-                        Text("执行调整")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Color.purple)
-                            .cornerRadius(8)
-                    }
-                }
-                Button(action: { respondDailyCheck("accepted") }) {
-                    Text("知道了")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.teal)
-                        .cornerRadius(8)
-                }
-                Button(action: { respondDailyCheck("ignored") }) {
-                    Text("忽略")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color(UIColor.systemGray5))
-                        .cornerRadius(8)
-                }
-            }
-        }
-        .padding(14)
-        .background(Color.teal.opacity(0.06))
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.teal.opacity(0.3), lineWidth: 1)
-        )
-    }
-    
     private func loadProgress(planId: Int) {
         loadingProgress = true
         showProgressSheet = true
@@ -1698,128 +1290,79 @@ struct WorkoutCardView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            Button(action: { withAnimation(.spring(response: 0.3)) { expanded.toggle() } }) {
-                HStack(spacing: 10) {
-                    Text(config.icon).font(.title3)
-                        .frame(width: 40, height: 40)
-                        .background(config.color.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(workout.workoutName ?? "未命名")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.primary)
-                        HStack(spacing: 8) {
-                            if let dur = workout.durationMin {
-                                Label("\(dur)min", systemImage: "clock")
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                            if let tss = workout.tssEstimate {
-                                Text("TSS \(tss)")
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                            if let km = workout.distanceKm {
-                                Text("\(String(format: "%.1f", km))km")
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(14)
-            
-            if expanded {
-                Divider().padding(.horizontal, 14)
-                
+        GroupBox {
+            DisclosureGroup(isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 10) {
                     // 描述
                     if let desc = workout.description, !desc.isEmpty {
                         MarkdownTextView(markdown: desc)
-                            .padding(10)
-                            .background(Color(UIColor.systemGray6))
-                            .cornerRadius(10)
                     }
-                    
+
                     // 步骤
                     if let steps = workout.steps, !steps.isEmpty {
-                        Text("训练步骤").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+                        Text("训练步骤").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                             StepCardView(step: step)
                         }
                     }
-                    
+
                     if onCancelSchedule != nil || onPostpone != nil || onMoveTo != nil {
-                        Divider().padding(.top, 6).padding(.bottom, 6)
-                        HStack(spacing: 20) {
+                        HStack(spacing: 10) {
                             if let cancel = onCancelSchedule {
-                                Button(action: cancel) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "trash")
-                                        Text("删除")
-                                    }
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.red)
-                                }
+                                Button("删除", systemImage: "trash", role: .destructive, action: cancel)
                             }
                             if let postpone = onPostpone {
-                                Button(action: postpone) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "clock") 
-                                        Text("顺延其后")
-                                    }
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.orange)
-                                }
+                                Button("顺延其后", systemImage: "clock", action: postpone)
                             }
                             if let moveTo = onMoveTo {
-                                Button(action: moveTo) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "arrow.right.circle")
-                                        Text("移动至")
-                                    }
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.teal)
-                                }
+                                Button("移动至", systemImage: "arrow.right.circle", action: moveTo)
                             }
-                            Spacer()
                         }
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 4)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
                 }
-                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(workout.workoutName ?? "未命名")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.primary)
+                        if !summaryText.isEmpty {
+                            Text(summaryText)
+                                .font(.caption)
+                                .foregroundStyle(Color.secondary)
+                        }
+                    }
+                } icon: {
+                    Text(config.icon)
+                }
             }
-            
-            Divider().padding(.horizontal, 14)
-            
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayPlanTitle)
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.primary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
                 Text(displayPlanIntro)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
         }
-        .background(Color.white)
-        .cornerRadius(16)
         .onAppear { expanded = initiallyExpanded }
+    }
+
+    private var summaryText: String {
+        var parts: [String] = []
+        if let dur = workout.durationMin { parts.append("\(dur)min") }
+        if let tss = workout.tssEstimate { parts.append("TSS \(tss)") }
+        if let km = workout.distanceKm { parts.append("\(String(format: "%.1f", km))km") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -1975,7 +1518,7 @@ struct StepCardView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white)
+        .background(Color(.systemBackground))
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
     }
@@ -1996,7 +1539,7 @@ struct StepCardView: View {
             .padding(.horizontal, 10).padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white)
+        .background(Color(.systemBackground))
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
     }
@@ -2046,7 +1589,7 @@ struct StepCardView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white)
+        .background(Color(.systemBackground))
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor.systemGray4), lineWidth: 0.5))
     }
@@ -2077,296 +1620,222 @@ struct GeneratePlanSheet: View {
         self._form = State(initialValue: initialForm)
     }
     
+    private func sportBinding(_ key: String) -> Binding<Bool> {
+        Binding(
+            get: { form.sports.contains(key) },
+            set: { isOn in
+                if isOn {
+                    form.sports.insert(key)
+                } else if form.sports.count > 1 {
+                    form.sports.remove(key)
+                }
+                if !form.sports.contains("cycling") {
+                    form.lsdDays = []
+                } else if form.lsdDays.isEmpty, let fallback = form.trainDays.max() {
+                    form.lsdDays = [fallback]
+                }
+                if form.sports.count <= 1 {
+                    form.multiSportDay = false
+                }
+            }
+        )
+    }
+
+    private func trainDayBinding(_ key: Int) -> Binding<Bool> {
+        Binding(
+            get: { form.trainDays.contains(key) },
+            set: { isOn in
+                if isOn {
+                    form.trainDays.insert(key)
+                } else if form.trainDays.count > 1 {
+                    form.trainDays.remove(key)
+                }
+                form.lsdDays = form.lsdDays.intersection(form.trainDays)
+                if form.lsdDays.isEmpty, form.sports.contains("cycling"), let fallback = form.trainDays.max() {
+                    form.lsdDays = [fallback]
+                }
+            }
+        )
+    }
+
+    private func lsdDayBinding(_ key: Int) -> Binding<Bool> {
+        Binding(
+            get: { form.lsdDays.contains(key) },
+            set: { isOn in
+                if isOn {
+                    form.lsdDays.insert(key)
+                } else {
+                    form.lsdDays.remove(key)
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // 计划模式
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("计划模式").font(.headline)
-                        Picker("模式", selection: $form.mode) {
-                            Text("固定周期").tag("fixed")
-                            Text("目标驱动").tag("goal_driven")
-                        }
-                        .pickerStyle(.segmented)
-                        
-                        if form.mode == "goal_driven" {
-                            Text("🎯 目标驱动模式：AI 按周期滚动生成课程，持续追踪进度并自动调整")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+            Form {
+                // 计划模式
+                Section {
+                    Picker("计划模式", selection: $form.mode) {
+                        Text("固定周期").tag("fixed")
+                        Text("目标驱动").tag("goal_driven")
                     }
-                    
-                    // 运动类型
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("运动类型").font(.headline)
-                        HStack(spacing: 10) {
-                            ForEach(sportOptions, id: \.key) { option in
-                                Button(action: {
-                                    if form.sports.contains(option.key) {
-                                        if form.sports.count > 1 { form.sports.remove(option.key) }
-                                    } else { form.sports.insert(option.key) }
-                                    if !form.sports.contains("cycling") {
-                                        form.lsdDays = []
-                                    } else if form.lsdDays.isEmpty, let fallback = form.trainDays.max() {
-                                        form.lsdDays = [fallback]
-                                    }
-                                    if form.sports.count <= 1 {
-                                        form.multiSportDay = false
-                                    }
-                                }) {
-                                    VStack(spacing: 4) {
-                                        Text(option.icon).font(.title2)
-                                        Text(option.label).font(.caption.weight(.medium))
-                                    }
-                                    .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                    .background(form.sports.contains(option.key) ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
-                                    .cornerRadius(12)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(form.sports.contains(option.key) ? Color.teal : Color.clear, lineWidth: 2)
-                                    )
-                                }
-                                .foregroundColor(.primary)
-                            }
-                        }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("计划模式")
+                } footer: {
+                    if form.mode == "goal_driven" {
+                        Text("目标驱动模式：AI 按周期滚动生成课程，持续追踪进度并自动调整")
+                    }
+                }
 
-                        if form.sports.count > 1 {
-                            Toggle("同一天可安排多种运动的训练课程", isOn: $form.multiSportDay)
-                                .font(.subheadline)
-                                .tint(.teal)
-                            if !form.multiSportDay {
-                                Text("未开启时，每天只安排一项运动，多项目轮流交替")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                // 运动类型
+                Section {
+                    ForEach(sportOptions, id: \.key) { option in
+                        Toggle("\(option.icon) \(option.label)", isOn: sportBinding(option.key))
                     }
-                    
-                    // 训练目标
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("训练目标").font(.headline)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                            ForEach(trainingGoals, id: \.key) { goal in
-                                Button(action: {
-                                    form.goal = goal.key
-                                    if goal.key == "triathlon" {
-                                        form.sports = ["cycling", "running", "swimming"]
-                                    }
-                                }) {
-                                    HStack(spacing: 6) {
-                                        Text(goal.icon)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(goal.label).font(.caption.weight(.semibold))
-                                            Text(goal.desc).font(.system(size: 9)).foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(10)
-                                    .background(form.goal == goal.key ? Color.purple.opacity(0.12) : Color(UIColor.systemGray6))
-                                    .cornerRadius(10)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(form.goal == goal.key ? Color.purple : Color.clear, lineWidth: 2)
-                                    )
-                                }
-                                .foregroundColor(.primary)
-                            }
-                        }
+                    if form.sports.count > 1 {
+                        Toggle("同一天可安排多种运动", isOn: $form.multiSportDay)
                     }
+                } header: {
+                    Text("运动类型")
+                } footer: {
+                    if form.sports.count > 1 && !form.multiSportDay {
+                        Text("未开启时，每天只安排一项运动，多项目轮流交替")
+                    }
+                }
 
-                    goalDetailSection
-                    
-                    // 训练日
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("训练日").font(.headline)
-                        HStack(spacing: 6) {
-                            ForEach(weekdayKeys, id: \.key) { wk in
-                                Button(action: {
-                                    if form.trainDays.contains(wk.key) {
-                                        if form.trainDays.count > 1 { form.trainDays.remove(wk.key) }
-                                    } else { form.trainDays.insert(wk.key) }
-                                    form.lsdDays = form.lsdDays.intersection(form.trainDays)
-                                    if form.lsdDays.isEmpty, form.sports.contains("cycling"), let fallback = form.trainDays.max() {
-                                        form.lsdDays = [fallback]
-                                    }
-                                }) {
-                                    Text(wk.label)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .frame(width: 36, height: 36)
-                                        .background(form.trainDays.contains(wk.key) ? Color.teal : Color(UIColor.systemGray5))
-                                        .foregroundColor(form.trainDays.contains(wk.key) ? .white : .primary)
-                                        .clipShape(Circle())
-                                }
-                            }
+                // 训练目标
+                Section {
+                    Picker("训练目标", selection: $form.goal) {
+                        ForEach(trainingGoals, id: \.key) { goal in
+                            Text("\(goal.icon) \(goal.label)").tag(goal.key)
                         }
                     }
-
-                    if form.sports.contains("cycling") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("长距离骑行日（LSD）").font(.headline)
-                            HStack(spacing: 6) {
-                                ForEach(weekdayKeys.filter { form.trainDays.contains($0.key) }, id: \.key) { wk in
-                                    Button(action: {
-                                        if form.lsdDays.contains(wk.key) {
-                                            form.lsdDays.remove(wk.key)
-                                        } else {
-                                            form.lsdDays.insert(wk.key)
-                                        }
-                                    }) {
-                                        Text(wk.label)
-                                            .font(.system(size: 13, weight: .medium))
-                                            .frame(width: 36, height: 36)
-                                            .background(form.lsdDays.contains(wk.key) ? Color.orange : Color(UIColor.systemGray5))
-                                            .foregroundColor(form.lsdDays.contains(wk.key) ? .white : .primary)
-                                            .clipShape(Circle())
-                                    }
-                                }
-                            }
-                            Text("LSD 日可安排 2-4 小时长骑")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                    .onChange(of: form.goal) { _, newGoal in
+                        if newGoal == "triathlon" {
+                            form.sports = ["cycling", "running", "swimming"]
                         }
                     }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("起始日期").font(.headline)
-                        DatePicker(
-                            "起始日期",
-                            selection: $form.startDate,
-                            in: Date()...,
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.compact)
-                        .labelsHidden()
-                        .environment(\.locale, Locale(identifier: "zh_CN"))
-                        .environment(\.calendar, Calendar(identifier: .gregorian))
+                } footer: {
+                    if let goal = trainingGoals.first(where: { $0.key == form.goal }) {
+                        Text(goal.desc)
                     }
+                }
+
+                goalDetailSection
+
+                // 训练日
+                Section("训练日") {
+                    HStack {
+                        ForEach(weekdayKeys, id: \.key) { wk in
+                            Toggle(wk.label, isOn: trainDayBinding(wk.key))
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .toggleStyle(.button)
+                    .buttonBorderShape(.circle)
+                }
+
+                if form.sports.contains("cycling") {
+                    Section {
+                        HStack {
+                            ForEach(weekdayKeys.filter { form.trainDays.contains($0.key) }, id: \.key) { wk in
+                                Toggle(wk.label, isOn: lsdDayBinding(wk.key))
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .toggleStyle(.button)
+                        .buttonBorderShape(.circle)
+                        .tint(.orange)
+                    } header: {
+                        Text("长距离骑行日（LSD）")
+                    } footer: {
+                        Text("LSD 日可安排 2-4 小时长骑")
+                    }
+                }
+
+                Section {
+                    DatePicker(
+                        "起始日期",
+                        selection: $form.startDate,
+                        in: Date()...,
+                        displayedComponents: .date
+                    )
 
                     if form.mode == "goal_driven" {
                         // 目标驱动：目标日期 + 微周期天数
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("目标日期").font(.headline)
-                            DatePicker(
-                                "目标日期",
-                                selection: Binding(
-                                    get: { form.targetDate ?? Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date() },
-                                    set: { form.targetDate = $0 }
-                                ),
-                                in: Date()...,
-                                displayedComponents: .date
-                            )
-                            .datePickerStyle(.compact)
-                            .labelsHidden()
-                            .environment(\.locale, Locale(identifier: "zh_CN"))
-                            .environment(\.calendar, Calendar(identifier: .gregorian))
-                            Text("AI 将根据目标日期规划整体周期")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("微周期天数").font(.headline)
-                                Spacer()
-                                Text("\(form.microCycleDays) 天").font(.subheadline.weight(.bold)).foregroundColor(.teal)
-                            }
-                            Picker("微周期", selection: $form.microCycleDays) {
-                                Text("5 天").tag(5)
-                                Text("7 天").tag(7)
-                                Text("10 天").tag(10)
-                                Text("14 天").tag(14)
-                            }
-                            .pickerStyle(.segmented)
-                            Text("每个微周期结束后可复盘并续期")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        DatePicker(
+                            "目标日期",
+                            selection: Binding(
+                                get: { form.targetDate ?? Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date() },
+                                set: { form.targetDate = $0 }
+                            ),
+                            in: Date()...,
+                            displayedComponents: .date
+                        )
+
+                        Picker("微周期天数", selection: $form.microCycleDays) {
+                            Text("5 天").tag(5)
+                            Text("7 天").tag(7)
+                            Text("10 天").tag(10)
+                            Text("14 天").tag(14)
                         }
                     } else {
                         // 固定模式：周训练量 + 周数
-                        // TSS 预设
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("周训练量").font(.headline)
-                        HStack(spacing: 8) {
+                        Picker("周训练量", selection: $form.tssLevel) {
                             ForEach(tssPresets, id: \.key) { preset in
-                                Button(action: { form.tssLevel = preset.key }) {
-                                    VStack(spacing: 2) {
-                                        Text(preset.label).font(.caption.weight(.semibold))
-                                        Text(preset.tss).font(.system(size: 9, weight: .bold)).foregroundColor(.teal)
-                                        Text(preset.hours).font(.system(size: 8)).foregroundColor(.secondary)
-                                        Text(preset.desc).font(.system(size: 8)).foregroundColor(.secondary)
-                                    }
-                                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-                                    .background(form.tssLevel == preset.key ? Color.teal.opacity(0.15) : Color(UIColor.systemGray6))
-                                    .cornerRadius(10)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(form.tssLevel == preset.key ? Color.teal : Color.clear, lineWidth: 2)
-                                    )
-                                }
-                                .foregroundColor(.primary)
+                                Text("\(preset.label) · TSS \(preset.tss) · \(preset.hours)").tag(preset.key)
                             }
                         }
-                    }
 
-                    // 周数
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("计划周数").font(.headline)
-                            Spacer()
-                            Text("\(Int(form.weeks)) 周").font(.subheadline.weight(.bold)).foregroundColor(.teal)
-                        }
-                        Slider(value: $form.weeks, in: 1...12, step: 1).tint(.teal)
+                        Stepper("计划周数：\(Int(form.weeks)) 周", value: $form.weeks, in: 1...12, step: 1)
                     }
-                    } // end else (fixed mode)
+                } header: {
+                    Text("周期与负荷")
+                } footer: {
+                    if form.mode == "goal_driven" {
+                        Text("AI 将根据目标日期规划整体周期，每个微周期结束后可复盘并续期")
+                    } else if let preset = tssPresets.first(where: { $0.key == form.tssLevel }) {
+                        Text(preset.desc)
+                    }
+                }
+                .environment(\.locale, Locale(identifier: "zh_CN"))
+                .environment(\.calendar, Calendar(identifier: .gregorian))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("其他要求").font(.headline)
-                        TextEditor(text: $form.extraRequirements)
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 96)
-                            .padding(10)
-                            .background(Color(UIColor.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color(UIColor.systemGray5), lineWidth: 1)
-                            )
-                            .overlay(alignment: .topLeading) {
-                                if form.extraRequirements.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    Text("例如：本周有比赛需要减量、最近膝盖不适避免爬坡...")
-                                        .font(.subheadline)
-                                        .foregroundColor(Color(UIColor.placeholderText))
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 18)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                    }
-                    
-                    // 生成按钮
-                    Button(action: {
+                Section("其他要求") {
+                    TextField(
+                        "其他要求",
+                        text: $form.extraRequirements,
+                        prompt: Text("例如：本周有比赛需要减量、最近膝盖不适避免爬坡..."),
+                        axis: .vertical
+                    )
+                    .lineLimit(3...8)
+                    .focused($focusedField, equals: "extraRequirements")
+                }
+
+                // 生成按钮
+                Section {
+                    Button {
                         focusedField = nil
                         onGenerate(form)
-                    }) {
+                    } label: {
                         HStack {
                             if generating {
-                                ProgressView().tint(.white)
+                                ProgressView()
                             } else {
                                 Image(systemName: "sparkles")
                             }
                             Text(generating ? "生成中..." : "生成训练计划")
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .background(
-                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .foregroundColor(.white).cornerRadius(14)
+                        .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .disabled(generating)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 }
-                .padding()
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("AI 生成训练计划")
@@ -2383,56 +1852,40 @@ struct GeneratePlanSheet: View {
     private var goalDetailSection: some View {
         switch form.goal {
         case "ftp_improvement":
-            detailCard(title: "FTP 目标设定", icon: "⚡", footnote: "专业建议：3 周计划 FTP 提升 3-5% 为合理目标") {
-                HStack(spacing: 12) {
-                    detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
-                    detailField(title: "目标 FTP (W)", key: "targetFtp", keyboard: .numberPad)
-                }
+            detailSection(title: "FTP 目标设定", footnote: "专业建议：3 周计划 FTP 提升 3-5% 为合理目标") {
+                detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
+                detailField(title: "目标 FTP (W)", key: "targetFtp", keyboard: .numberPad)
             }
         case "aerobic_endurance":
-            detailCard(title: "有氧耐力目标", icon: "💚", footnote: "专业建议：逐步将 Z2 时长从 60 分钟递增到目标值") {
-                HStack(spacing: 12) {
-                    detailField(title: "目标单次 Z2 时长", key: "targetZ2Duration", placeholder: "如 120", keyboard: .numberPad)
-                    detailField(title: "目标周训练量 (小时)", key: "targetWeeklyHours", placeholder: "如 8", keyboard: .numbersAndPunctuation)
-                }
+            detailSection(title: "有氧耐力目标", footnote: "专业建议：逐步将 Z2 时长从 60 分钟递增到目标值") {
+                detailField(title: "目标单次 Z2 时长", key: "targetZ2Duration", placeholder: "如 120", keyboard: .numberPad)
+                detailField(title: "目标周训练量 (小时)", key: "targetWeeklyHours", placeholder: "如 8", keyboard: .numbersAndPunctuation)
             }
         case "vo2max_development":
-            detailCard(title: "VO₂max 目标", icon: "🔴", footnote: "专业建议：高强度间歇是提升 VO₂max 的有效手段") {
-                HStack(spacing: 12) {
-                    detailField(title: "当前 VO₂max", key: "currentVo2", placeholder: "如 45", keyboard: .numberPad)
-                    detailField(title: "目标 VO₂max", key: "targetVo2", placeholder: "如 50", keyboard: .numberPad)
-                }
+            detailSection(title: "VO₂max 目标", footnote: "专业建议：高强度间歇是提升 VO₂max 的有效手段") {
+                detailField(title: "当前 VO₂max", key: "currentVo2", placeholder: "如 45", keyboard: .numberPad)
+                detailField(title: "目标 VO₂max", key: "targetVo2", placeholder: "如 50", keyboard: .numberPad)
             }
         case "sprint_power":
-            detailCard(title: "冲刺能力目标", icon: "💥", footnote: "专业建议：以 5-30 秒全力冲刺为核心，配合充足恢复") {
-                HStack(spacing: 12) {
-                    detailField(title: "目标冲刺功率 (W)", key: "targetSprintPower", placeholder: "如 800", keyboard: .numberPad)
-                    detailField(title: "冲刺持续时间 (秒)", key: "sprintDuration", placeholder: "如 15", keyboard: .numberPad)
-                }
+            detailSection(title: "冲刺能力目标", footnote: "专业建议：以 5-30 秒全力冲刺为核心，配合充足恢复") {
+                detailField(title: "目标冲刺功率 (W)", key: "targetSprintPower", placeholder: "如 800", keyboard: .numberPad)
+                detailField(title: "冲刺持续时间 (秒)", key: "sprintDuration", placeholder: "如 15", keyboard: .numberPad)
             }
         case "triathlon":
-            detailCard(title: "铁三目标", icon: "🏆", footnote: nil) {
-                VStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("参赛距离").font(.caption).foregroundColor(.secondary)
-                        Picker("参赛距离", selection: detailBinding("raceDistance")) {
-                            Text("请选择").tag("")
-                            Text("冲刺赛（S）").tag("sprint")
-                            Text("标准赛（O）").tag("olympic")
-                            Text("半程（70.3）").tag("half")
-                            Text("全程（140.6）").tag("full")
-                        }
-                        .pickerStyle(.menu)
-                    }
-                    detailField(title: "目标完赛时间", key: "targetFinishTime", placeholder: "如 3小时30分", keyboard: .default)
+            detailSection(title: "铁三目标", footnote: nil) {
+                Picker("参赛距离", selection: detailBinding("raceDistance")) {
+                    Text("请选择").tag("")
+                    Text("冲刺赛（S）").tag("sprint")
+                    Text("标准赛（O）").tag("olympic")
+                    Text("半程（70.3）").tag("half")
+                    Text("全程（140.6）").tag("full")
                 }
+                detailField(title: "目标完赛时间", key: "targetFinishTime", placeholder: "如 3小时30分", keyboard: .default)
             }
         case "general_fitness":
-            detailCard(title: "综合提升", icon: "🎯", footnote: nil) {
-                HStack(spacing: 12) {
-                    detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
-                    detailField(title: "重点方向", key: "focusArea", placeholder: "如 爬坡、耐力", keyboard: .default)
-                }
+            detailSection(title: "综合提升", footnote: nil) {
+                detailField(title: "当前 FTP (W)", key: "currentFtp", keyboard: .numberPad)
+                detailField(title: "重点方向", key: "focusArea", placeholder: "如 爬坡、耐力", keyboard: .default)
             }
         default:
             EmptyView()
@@ -2447,33 +1900,24 @@ struct GeneratePlanSheet: View {
     }
 
     private func detailField(title: String, key: String, placeholder: String? = nil, keyboard: UIKeyboardType) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            TextField(placeholder ?? title, text: detailBinding(key))
-                .textFieldStyle(.roundedBorder)
+        LabeledContent(title) {
+            TextField(placeholder ?? "未填写", text: detailBinding(key))
                 .keyboardType(keyboard)
+                .multilineTextAlignment(.trailing)
                 .focused($focusedField, equals: key)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func detailCard<Content: View>(title: String, icon: String, footnote: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("\(icon) \(title)")
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.secondary)
+    private func detailSection<Content: View>(title: String, footnote: String?, @ViewBuilder content: () -> Content) -> some View {
+        Section {
             content()
+        } header: {
+            Text(title)
+        } footer: {
             if let footnote {
                 Text(footnote)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
             }
         }
-        .padding(12)
-        .background(Color(UIColor.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -2492,156 +1936,106 @@ struct GoalPlanProgressSheet: View {
         "infeasible": ("需调整目标", .red),
     ]
     
+    private let blockStatusColors: [String: Color] = [
+        "active": .teal,
+        "completed": .green,
+        "planned": .gray,
+        "skipped": .orange,
+    ]
+    private let blockStatusLabels: [String: String] = [
+        "active": "进行中",
+        "completed": "已完成",
+        "planned": "待开始",
+        "skipped": "已跳过",
+    ]
+
     var body: some View {
-        NavigationView {
-            ScrollView {
-                if loading {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("加载进度数据...")
-                            .font(.caption).foregroundColor(.secondary)
+        NavigationStack {
+            List {
+                if !loading, let data = progressData {
+                    // 目标信息
+                    Section("训练目标") {
+                        if let goalKind = data.goalKind {
+                            LabeledContent("目标", value: goalKindLabel(goalKind))
+                        }
+                        if let targetDate = data.targetDate {
+                            LabeledContent("目标日期", value: targetDate)
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 80)
-                } else if let data = progressData {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // 目标信息
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("训练目标").font(.headline)
-                            HStack(spacing: 12) {
-                                if let goalKind = data.goalKind {
-                                    Label(goalKindLabel(goalKind), systemImage: "target")
-                                        .font(.subheadline)
-                                }
-                                if let targetDate = data.targetDate {
-                                    Label(targetDate, systemImage: "calendar")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
+
+                    // 进度评估
+                    if let progress = data.progressState {
+                        Section("进度评估") {
+                            if let assessment = progress.targetAssessment,
+                               let info = assessmentLabels[assessment] {
+                                LabeledContent("评估") {
+                                    Text(info.label)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(info.color)
                                 }
                             }
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
-                        .cornerRadius(14)
-                        
-                        // 进度评估
-                        if let progress = data.progressState {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text("进度评估").font(.headline)
-                                    Spacer()
-                                    if let assessment = progress.targetAssessment,
-                                       let info = assessmentLabels[assessment] {
-                                        Text(info.label)
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 4)
-                                            .background(info.color)
-                                            .cornerRadius(8)
-                                    }
-                                }
-                                
-                                if let summary = progress.summary {
-                                    Text(summary)
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                        .lineSpacing(4)
-                                }
-                                
-                                if let focus = progress.nextFocus {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.forward.circle.fill")
-                                            .foregroundColor(.teal)
-                                        Text("下一步重点：\(focus)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
+
+                            if let summary = progress.summary {
+                                Text(summary)
+                                    .font(.subheadline)
                             }
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(14)
-                        }
-                        
-                        // 统计
-                        if let stats = data.stats {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("统计概览").font(.headline)
-                                HStack(spacing: 20) {
-                                    statItem(value: "\(stats.completedBlocks ?? 0)/\(stats.totalBlocks ?? 0)", label: "已完成周期")
-                                    statItem(value: "\(stats.totalWorkouts ?? 0)", label: "总课程数")
-                                    statItem(value: "\(stats.pushedWorkouts ?? 0)", label: "已推送")
-                                }
-                            }
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(14)
-                        }
-                        
-                        // 当前活跃 Block
-                        if let block = data.activeBlock {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("当前周期").font(.headline)
-                                    Spacer()
-                                    Text("Block \(block.blockIndex + 1)")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundColor(.teal)
-                                }
-                                if let theme = block.theme {
-                                    Text(theme).font(.subheadline.weight(.semibold))
-                                }
-                                if let focus = block.focus {
-                                    Text(focus).font(.caption).foregroundColor(.secondary)
-                                }
-                                if let start = block.blockStartDate, let end = block.blockEndDate {
-                                    Text("\(start) ~ \(end)")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                }
-                            }
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(14)
-                        }
-                        
-                        // Block 时间线
-                        if let blocks = data.blocks, !blocks.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("周期时间线").font(.headline)
-                                ForEach(blocks) { block in
-                                    blockTimelineRow(block: block)
-                                }
-                            }
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(14)
-                        }
-                        
-                        // 下次复盘
-                        if let nextReview = data.nextReviewAt {
-                            HStack(spacing: 6) {
-                                Image(systemName: "clock.badge.checkmark")
-                                    .foregroundColor(.purple)
-                                Text("下次复盘：\(nextReview)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+
+                            if let focus = progress.nextFocus {
+                                Label("下一步重点：\(focus)", systemImage: "arrow.forward.circle.fill")
+                                    .font(.footnote)
                             }
                         }
                     }
-                    .padding()
-                } else {
-                    Text("暂无进度数据")
-                        .foregroundColor(.secondary)
-                        .padding(.top, 80)
+
+                    // 统计
+                    if let stats = data.stats {
+                        Section("统计概览") {
+                            LabeledContent("已完成周期", value: "\(stats.completedBlocks ?? 0)/\(stats.totalBlocks ?? 0)")
+                            LabeledContent("总课程数", value: "\(stats.totalWorkouts ?? 0)")
+                            LabeledContent("已推送", value: "\(stats.pushedWorkouts ?? 0)")
+                        }
+                    }
+
+                    // 当前活跃 Block
+                    if let block = data.activeBlock {
+                        Section("当前周期 · Block \(block.blockIndex + 1)") {
+                            if let theme = block.theme {
+                                Text(theme).font(.subheadline.weight(.semibold))
+                            }
+                            if let focus = block.focus {
+                                Text(focus).font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if let start = block.blockStartDate, let end = block.blockEndDate {
+                                LabeledContent("起止日期", value: "\(start) ~ \(end)")
+                            }
+                        }
+                    }
+
+                    // Block 时间线
+                    if let blocks = data.blocks, !blocks.isEmpty {
+                        Section("周期时间线") {
+                            ForEach(blocks) { block in
+                                blockTimelineRow(block: block)
+                            }
+                        }
+                    }
+
+                    // 下次复盘
+                    if let nextReview = data.nextReviewAt {
+                        Section {
+                            Label("下次复盘：\(nextReview)", systemImage: "clock.badge.checkmark")
+                                .font(.footnote)
+                        }
+                    }
                 }
             }
-            .background(Color(UIColor.systemGroupedBackground))
+            .overlay {
+                if loading {
+                    ProgressView("加载进度数据...")
+                } else if progressData == nil {
+                    ContentUnavailableView("暂无进度数据", systemImage: "chart.line.uptrend.xyaxis")
+                }
+            }
             .navigationTitle("训练进度")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2651,58 +2045,109 @@ struct GoalPlanProgressSheet: View {
             }
         }
     }
-    
-    private func statItem(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.primary)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-    }
-    
+
     private func blockTimelineRow(block: TrainingPlanBlock) -> some View {
-        let statusColors: [String: Color] = [
-            "active": .teal,
-            "completed": .green,
-            "planned": .gray,
-            "skipped": .orange,
-        ]
-        let statusLabels: [String: String] = [
-            "active": "进行中",
-            "completed": "已完成",
-            "planned": "待开始",
-            "skipped": "已跳过",
-        ]
-        
-        return HStack(spacing: 10) {
-            Circle()
-                .fill(statusColors[block.status ?? "planned"] ?? .gray)
-                .frame(width: 8, height: 8)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("Block \(block.blockIndex + 1)")
-                        .font(.caption.weight(.semibold))
-                    if let theme = block.theme {
-                        Text("· \(theme)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Text(statusLabels[block.status ?? "planned"] ?? block.status ?? "planned")
-                        .font(.caption2)
-                        .foregroundColor(statusColors[block.status ?? "planned"] ?? .gray)
-                }
+        let status = block.status ?? "planned"
+        let color = blockStatusColors[status] ?? .gray
+
+        return LabeledContent {
+            Text(blockStatusLabels[status] ?? status)
+                .foregroundStyle(color)
+        } label: {
+            Label {
+                Text(block.theme.map { "Block \(block.blockIndex + 1) · \($0)" } ?? "Block \(block.blockIndex + 1)")
                 if let start = block.blockStartDate, let end = block.blockEndDate {
                     Text("\(start) ~ \(end)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
+            } icon: {
+                Image(systemName: status == "completed" ? "checkmark.circle.fill" : status == "active" ? "circle.inset.filled" : "circle")
+                    .foregroundStyle(color)
             }
         }
-        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Workout Calendar (UICalendarView)
+
+/// 系统日历控件，有训练的日期显示标记点
+struct WorkoutCalendarView: UIViewRepresentable {
+    let workoutDates: Set<String>
+    let selectedDate: String?
+    let onSelect: (String) -> Void
+
+    private static var gregorian: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        return cal
+    }
+
+    static func key(for components: DateComponents) -> String? {
+        guard let y = components.year, let m = components.month, let d = components.day else { return nil }
+        return String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    static func components(for key: String) -> DateComponents? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return DateComponents(calendar: gregorian, year: parts[0], month: parts[1], day: parts[2])
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UICalendarView {
+        let view = UICalendarView()
+        view.calendar = Self.gregorian
+        view.locale = Locale(identifier: "zh_CN")
+        view.delegate = context.coordinator
+
+        let selection = UICalendarSelectionSingleDate(delegate: context.coordinator)
+        if let selectedDate, let comps = Self.components(for: selectedDate) {
+            selection.setSelected(comps, animated: false)
+            view.visibleDateComponents = comps
+        }
+        view.selectionBehavior = selection
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ uiView: UICalendarView, context: Context) {
+        let coordinator = context.coordinator
+        let changed = coordinator.parent.workoutDates.symmetricDifference(workoutDates)
+        coordinator.parent = self
+        if !changed.isEmpty {
+            uiView.reloadDecorations(forDateComponents: changed.compactMap(Self.components(for:)), animated: true)
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UICalendarView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        let fitted = uiView.systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        return CGSize(width: width, height: fitted.height)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UICalendarViewDelegate, UICalendarSelectionSingleDateDelegate {
+        var parent: WorkoutCalendarView
+
+        init(parent: WorkoutCalendarView) {
+            self.parent = parent
+        }
+
+        func calendarView(_ calendarView: UICalendarView, decorationFor dateComponents: DateComponents) -> UICalendarView.Decoration? {
+            guard let key = WorkoutCalendarView.key(for: dateComponents),
+                  parent.workoutDates.contains(key) else { return nil }
+            return .default(color: .tintColor, size: .large)
+        }
+
+        func dateSelection(_ selection: UICalendarSelectionSingleDate, didSelectDate dateComponents: DateComponents?) {
+            guard let dateComponents, let key = WorkoutCalendarView.key(for: dateComponents) else { return }
+            parent.onSelect(key)
+        }
     }
 }

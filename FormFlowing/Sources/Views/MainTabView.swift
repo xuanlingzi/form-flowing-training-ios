@@ -1,135 +1,44 @@
 import SwiftUI
 
-/// 控制 TabBar 可见性的环境键
-struct TabBarVisibleKey: EnvironmentKey {
-    static let defaultValue: Binding<Bool> = .constant(true)
-}
-
 /// 控制 Tab 切换的环境键
 struct SelectedTabKey: EnvironmentKey {
     static let defaultValue: Binding<Int> = .constant(0)
 }
 
 extension EnvironmentValues {
-    var tabBarVisible: Binding<Bool> {
-        get { self[TabBarVisibleKey.self] }
-        set { self[TabBarVisibleKey.self] = newValue }
-    }
     var selectedTab: Binding<Int> {
         get { self[SelectedTabKey.self] }
         set { self[SelectedTabKey.self] = newValue }
     }
 }
 
-/// 二级页面用来隐藏 TabBar 的 ViewModifier
-struct HideTabBarModifier: ViewModifier {
-    @Environment(\.tabBarVisible) var tabBarVisible
-    
-    func body(content: Content) -> some View {
-        content
-            .onAppear { tabBarVisible.wrappedValue = false }
-            .onDisappear { tabBarVisible.wrappedValue = true }
-    }
-}
-
 extension View {
+    /// 二级页面隐藏系统 TabBar
     func hideTabBar() -> some View {
-        modifier(HideTabBarModifier())
+        toolbarVisibility(.hidden, for: .tabBar)
     }
 }
 
-/// 主 Tab 导航（自定义 TabBar，支持浮起/降落动画）
+/// 主 Tab 导航（系统 TabView）
 struct MainTabView: View {
     @EnvironmentObject var auth: AuthManager
     @State private var selectedTab = 0
-    @State private var tabBarVisible = true
-    @State private var loadedTabs: Set<Int> = [0]
-    
-    private let teal = Color(red: 0.051, green: 0.580, blue: 0.533)
-    
-    private let tabs: [(icon: String, label: String)] = [
-        ("chart.bar.fill", "仪表盘"),
-        ("figure.outdoor.cycle", "活动"),
-        ("calendar", "训练"),
-        ("gearshape.fill", "设置"),
-    ]
-    
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            // 内容区域
-            ZStack {
-                ForEach(0..<tabs.count, id: \.self) { idx in
-                    if loadedTabs.contains(idx) {
-                        tabContent(for: idx)
-                            .opacity(selectedTab == idx ? 1 : 0)
-                            .allowsHitTesting(selectedTab == idx)
-                            .accessibilityHidden(selectedTab != idx)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, tabBarVisible ? 50 : 0)
-            .environment(\.tabBarVisible, $tabBarVisible)
-            .environment(\.selectedTab, $selectedTab)
-            
-            // 自定义 TabBar
-            customTabBar
-                .offset(y: tabBarVisible ? 0 : 100)
-                .opacity(tabBarVisible ? 1 : 0)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: tabBarVisible)
-        }
-        .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-        .ignoresSafeArea(.keyboard)
-    }
 
-    @ViewBuilder
-    private func tabContent(for idx: Int) -> some View {
-        switch idx {
-        case 0:
-            HomeView()
-        case 1:
-            ActivitiesView()
-        case 2:
-            TrainingView()
-        case 3:
-            SettingsView()
-        default:
-            HomeView()
-        }
-    }
-    
-    var customTabBar: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.3)
-            HStack(spacing: 0) {
-                ForEach(0..<tabs.count, id: \.self) { idx in
-                    let tab = tabs[idx]
-                    let isSelected = selectedTab == idx
-                    
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            loadedTabs.insert(idx)
-                            selectedTab = idx
-                        }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
-                                .foregroundColor(isSelected ? teal : .gray)
-                                .scaleEffect(isSelected ? 1.05 : 1.0)
-                            
-                            Text(tab.label)
-                                .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
-                                .foregroundColor(isSelected ? teal : .gray)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-                    }
-                }
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            Tab("仪表盘", systemImage: "chart.bar.fill", value: 0) {
+                HomeView()
+            }
+            Tab("活动", systemImage: "figure.outdoor.cycle", value: 1) {
+                ActivitiesView()
+            }
+            Tab("训练", systemImage: "calendar", value: 2) {
+                TrainingView()
+            }
+            Tab("设置", systemImage: "gearshape.fill", value: 3) {
+                SettingsView()
             }
         }
-        .background(.ultraThinMaterial.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: -1)))
-        .ignoresSafeArea(edges: .bottom)
+        .environment(\.selectedTab, $selectedTab)
     }
 }

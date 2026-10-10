@@ -303,101 +303,19 @@ struct MarkdownTextView: View {
         )
     }
     
-    // MARK: - Inline Markdown (bold, italic, bold+italic, strikethrough, code, links)
+    // MARK: - Inline Markdown (系统 AttributedString 解析：加粗、斜体、删除线、行内代码、链接)
     
     func renderInlineMarkdown(_ text: String) -> Text {
-        var result = Text("")
-        var remaining = text[text.startIndex...]
-        
-        while !remaining.isEmpty {
-            // 粗斜体 ***...***
-            if remaining.hasPrefix("***") {
-                let after = remaining.index(remaining.startIndex, offsetBy: 3)
-                if let end = remaining[after...].range(of: "***") {
-                    let content = String(remaining[after..<end.lowerBound])
-                    result = result + Text(content).bold().italic()
-                    remaining = remaining[end.upperBound...]
-                    continue
-                }
-            }
-            
-            // 加粗 **...**
-            if remaining.hasPrefix("**") {
-                let after = remaining.index(remaining.startIndex, offsetBy: 2)
-                if let end = remaining[after...].range(of: "**") {
-                    let bold = String(remaining[after..<end.lowerBound])
-                    result = result + Text(bold).bold()
-                    remaining = remaining[end.upperBound...]
-                    continue
-                }
-            }
-            
-            // 删除线 ~~...~~
-            if remaining.hasPrefix("~~") {
-                let after = remaining.index(remaining.startIndex, offsetBy: 2)
-                if let end = remaining[after...].range(of: "~~") {
-                    let struck = String(remaining[after..<end.lowerBound])
-                    result = result + Text(struck).strikethrough()
-                    remaining = remaining[end.upperBound...]
-                    continue
-                }
-            }
-            
-            // 行内代码 `...`
-            if remaining.hasPrefix("`") {
-                let after = remaining.index(after: remaining.startIndex)
-                if let end = remaining[after...].firstIndex(of: "`") {
-                    let code = String(remaining[after..<end])
-                    result = result + Text(code).font(.system(size: baseFontSize - 1, design: .monospaced)).foregroundColor(.teal)
-                    remaining = remaining[remaining.index(after: end)...]
-                    continue
-                }
-            }
-            
-            // 链接 [text](url)
-            if remaining.hasPrefix("[") {
-                let afterBracket = remaining.index(after: remaining.startIndex)
-                if let closeBracket = remaining[afterBracket...].firstIndex(of: "]") {
-                    let linkText = String(remaining[afterBracket..<closeBracket])
-                    let afterClose = remaining.index(after: closeBracket)
-                    if afterClose < remaining.endIndex && remaining[afterClose] == "(" {
-                        let afterParen = remaining.index(after: afterClose)
-                        if let closeParen = remaining[afterParen...].firstIndex(of: ")") {
-                            // 显示链接文字（蓝色带下划线）
-                            result = result + Text(linkText).foregroundColor(.blue).underline()
-                            remaining = remaining[remaining.index(after: closeParen)...]
-                            continue
-                        }
-                    }
-                }
-            }
-            
-            // 斜体 *...*
-            if remaining.hasPrefix("*") && !remaining.hasPrefix("**") {
-                let after = remaining.index(after: remaining.startIndex)
-                if let end = remaining[after...].firstIndex(of: "*") {
-                    let italic = String(remaining[after..<end])
-                    result = result + Text(italic).italic()
-                    remaining = remaining[remaining.index(after: end)...]
-                    continue
-                }
-            }
-            
-            // 普通文本到下一个特殊字符
-            var nextSpecial = remaining.endIndex
-            for marker in ["***", "**", "~~", "`", "[", "*"] {
-                if let r = remaining.dropFirst().range(of: marker) {
-                    if r.lowerBound < nextSpecial {
-                        nextSpecial = r.lowerBound
-                    }
-                }
-            }
-            
-            let plain = String(remaining[remaining.startIndex..<nextSpecial])
-            result = result + Text(plain)
-            remaining = remaining[nextSpecial...]
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        guard var attributed = try? AttributedString(markdown: text, options: options) else {
+            return Text(text)
         }
-        
-        return result
+        let codeRanges = attributed.runs
+            .filter { $0.inlinePresentationIntent?.contains(.code) == true }
+            .map(\.range)
+        for range in codeRanges {
+            attributed[range].foregroundColor = .teal
+        }
+        return Text(attributed)
     }
 }

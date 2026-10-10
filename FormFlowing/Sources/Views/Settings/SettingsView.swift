@@ -43,561 +43,327 @@ struct SettingsView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 16) {
-                    // Message
-                    if let msg = message {
-                        HStack {
-                            Image(systemName: msg.type == "success" ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            Text(msg.text)
-                        }
-                        .font(.caption)
-                        .foregroundColor(msg.type == "success" ? .green : .red)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background((msg.type == "success" ? Color.green : Color.red).opacity(0.1))
-                        .cornerRadius(12)
+            Form {
+                if let msg = message {
+                    Section {
+                        Label(msg.text, systemImage: msg.type == "success" ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(msg.type == "success" ? .green : .red)
                     }
-                    
-                    if activeTab == "profile" { profileTab }
-                    if activeTab == "datasources" { dataSourcesTab }
-                    if activeTab == "password" { passwordTab }
                 }
-                .padding()
-            }
-            .safeAreaInset(edge: .top) {
-                HStack(spacing: 4) {
-                    TabButton(title: "档案", icon: "person.circle", active: activeTab == "profile") { activeTab = "profile" }
-                    TabButton(title: "数据源", icon: "antenna.radiowaves.left.and.right", active: activeTab == "datasources") { activeTab = "datasources" }
-                    TabButton(title: "密码", icon: "lock.fill", active: activeTab == "password") { activeTab = "password" }
+
+                switch activeTab {
+                case "datasources": dataSourcesTab
+                case "password": passwordTab
+                default: profileTab
                 }
-                .frame(maxWidth: .infinity)
-                .padding(4)
-                .background(Color(UIColor.systemGray5))
-                .cornerRadius(14)
-                .padding(.horizontal)
-                .frame(height: 44)
-                .background(Color(UIColor.systemBackground))
             }
-            .background(Color(UIColor.systemGroupedBackground))
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("设置分类", selection: $activeTab) {
+                        Text("档案").tag("profile")
+                        Text("数据源").tag("datasources")
+                        Text("密码").tag("password")
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
             .task { await loadData() }
         }
     }
-    
+
     // MARK: - Profile Tab
-    
-    var profileTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "person.circle.fill")
-                    .font(.title2).foregroundColor(.purple)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("个人档案").font(.headline)
-                    Text("基本身体数据，Garmin 同步后会自动覆盖").font(.caption).foregroundColor(.secondary)
-                }
-            }
-            
-            // 身体数据区域
-            VStack(spacing: 12) {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    FormField(label: "体重 (kg)", value: Binding(
-                        get: { profile.weightKg.map { "\($0)" } ?? "" },
-                        set: { profile.weightKg = Double($0) }
-                    ), placeholder: "如 72.5")
-                    
-                    FormField(label: "身高 (cm)", value: Binding(
-                        get: { profile.heightCm.map { "\($0)" } ?? "" },
-                        set: { profile.heightCm = Double($0) }
-                    ), placeholder: "如 175")
-                    
-                    // 性别
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("性别").font(.subheadline.weight(.semibold))
-                        Picker("", selection: Binding(
-                            get: { profile.gender ?? "" },
-                            set: { profile.gender = $0.isEmpty ? nil : $0 }
-                        )) {
-                            Text("未设置").tag("")
-                            Text("男").tag("male")
-                            Text("女").tag("female")
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    
-                    // 出生日期
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("出生日期").font(.subheadline.weight(.semibold))
-                        TextField("如 1990-01-01", text: Binding(
-                            get: { profile.birthDate ?? "" },
-                            set: { profile.birthDate = $0.isEmpty ? nil : $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                    }
-                    
-                    FormField(label: "最大心率 (bpm)", value: Binding(
-                        get: { profile.hrMax.map { "\($0)" } ?? "" },
-                        set: { profile.hrMax = Int($0) }
-                    ), placeholder: "如 190")
-                    
-                    FormField(label: "静息心率 (bpm)", value: Binding(
-                        get: { profile.hrRest.map { "\($0)" } ?? "" },
-                        set: { profile.hrRest = Int($0) }
-                    ), placeholder: "如 55")
-                    
-                    FormField(label: "FTP (W)", value: Binding(
-                        get: { profile.ftpWatts.map { "\($0)" } ?? "" },
-                        set: { profile.ftpWatts = Int($0) }
-                    ), placeholder: "如 200")
-                    
-                    FormField(label: "VO₂Max", value: Binding(
-                        get: { profile.vo2Max.map { "\($0)" } ?? "" },
-                        set: { profile.vo2Max = Double($0) }
-                    ), placeholder: "如 48.5")
-                }
-            }
-            .padding(14)
-            .background(Color.teal.opacity(0.05))
-            .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.teal.opacity(0.2), lineWidth: 1))
-            
-            // 同步信息
-            if let syncAt = profile.garminSyncedAt ?? profile.updatedAt {
-                Text("更新于 \(syncAt.prefix(16).replacingOccurrences(of: "T", with: " "))")
-                    .font(.caption2).foregroundColor(.secondary).frame(maxWidth: .infinity)
-            }
-            
-            Button(action: saveProfile) {
-                HStack {
-                    if saving { ProgressView().tint(.white) }
-                    Image(systemName: "square.and.arrow.down")
-                    Text("保存档案")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.purple)
-                .foregroundColor(.white).font(.headline).cornerRadius(14)
-            }
-            .disabled(saving)
-            
-            // 记忆管理入口
-            NavigationLink(destination: MemoryView()) {
-                HStack {
-                    Label("记忆管理", systemImage: "brain.head.profile")
-                        .foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundColor(.secondary)
-                }
-                .padding(14)
-                .background(Color(UIColor.systemGray6))
-                .cornerRadius(12)
-            }
-            
-            // 会员状态卡片
-            subscriptionCard
-        }
-        .padding(16).background(.white).cornerRadius(16)
-    }
-    
-    var subscriptionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "crown.fill")
-                    .font(.title2)
-                    .foregroundStyle(auth.isPro
-                        ? LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        : LinearGradient(colors: [.gray, .gray.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("会员等级").font(.headline)
-                        Text(auth.tier.uppercased())
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(auth.isPro
-                                ? LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
-                                : LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
-                            .cornerRadius(6)
-                    }
-                    if let expiresAt = auth.tierExpiresAt {
-                        Text("到期时间：\(expiresAt.prefix(10))").font(.caption2).foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            if !auth.isPro {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles").foregroundColor(.orange)
-                    Text("升级 Pro 解锁 AI 深度分析、Strava/Intervals 同步等高级功能")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding(10)
-                .background(Color.orange.opacity(0.08))
-                .cornerRadius(10)
-            }
-        }
-        .padding(14)
-        .background(auth.isPro ? Color.orange.opacity(0.05) : Color(UIColor.systemGray6))
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(auth.isPro ? Color.orange.opacity(0.3) : Color.clear, lineWidth: 1)
+
+    private static let birthDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private var birthDateBinding: Binding<Date> {
+        Binding(
+            get: {
+                profile.birthDate.flatMap { Self.birthDateFormatter.date(from: String($0.prefix(10))) } ?? Date()
+            },
+            set: { profile.birthDate = Self.birthDateFormatter.string(from: $0) }
         )
     }
-    
-    // MARK: - Data Sources Tab (merged: Garmin + iGPSport + Intervals + Strava + Sync)
-    
-    var dataSourcesTab: some View {
-        VStack(spacing: 16) {
-            // ---- Garmin Card ----
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Image(systemName: "applewatch").font(.title2).foregroundColor(.teal)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Garmin 账号配置").font(.headline)
-                        Text("填写中国区和国际区的 Garmin 账号信息").font(.caption).foregroundColor(.secondary)
-                    }
-                }
-                
-                // CN 区
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.circle.fill").foregroundColor(.blue)
-                        Text("佳明中国区").font(.subheadline.weight(.semibold)).foregroundColor(.blue)
-                        Spacer()
-                        statusBadgeView(platform: "garmin_cn")
-                    }
-                    FormField(label: "用户名（邮箱）", value: $cnUsername, placeholder: "your@email.cn")
-                    FormField(label: "密码", value: $cnPassword, isSecure: true, placeholder: "留空则不修改")
-                }
-                .padding(14).background(Color.blue.opacity(0.05)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.blue.opacity(0.2), lineWidth: 1))
-                
-                HStack(spacing: 10) {
-                    Button(action: saveGarminCn) {
-                        HStack {
-                            if saving { ProgressView().tint(.white) }
-                            Image(systemName: "square.and.arrow.down")
-                            Text("保存并验证")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue)
-                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
-                    }
-                    .disabled(saving)
-                    
-                    if !cnUsername.isEmpty {
-                        Button(action: clearGarminCn) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .padding(12)
-                                .background(Color.red.opacity(0.1)).cornerRadius(12)
-                        }
-                        .disabled(saving)
-                    }
-                }
-                
-                Divider()
-                
-                // Global 区
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "globe").foregroundColor(.purple)
-                        Text("Garmin Global").font(.subheadline.weight(.semibold)).foregroundColor(.purple)
-                        Spacer()
-                        statusBadgeView(platform: "garmin_global")
-                    }
-                    FormField(label: "用户名（邮箱）", value: $globalUsername, placeholder: "your@email.com")
-                    FormField(label: "密码", value: $globalPassword, isSecure: true, placeholder: "留空则不修改")
-                }
-                .padding(14).background(Color.purple.opacity(0.05)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.2), lineWidth: 1))
-                
-                HStack(spacing: 10) {
-                    Button(action: saveGarminGlobal) {
-                        HStack {
-                            if saving { ProgressView().tint(.white) }
-                            Image(systemName: "square.and.arrow.down")
-                            Text("保存并验证")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.purple)
-                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
-                    }
-                    .disabled(saving)
-                    
-                    if !globalUsername.isEmpty {
-                        Button(action: clearGarminGlobal) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .padding(12)
-                                .background(Color.red.opacity(0.1)).cornerRadius(12)
-                        }
-                        .disabled(saving)
-                    }
-                }
-                
-                Divider()
-                
-                // CN/Global 双区同步 Toggle (auto-save)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text("CN/Global 双区同步").font(.subheadline.weight(.medium))
-                            if !auth.isPro {
-                                Text("PRO").font(.system(size: 8, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 4).padding(.vertical, 1)
-                                    .background(Color.orange).cornerRadius(4)
-                            }
-                        }
-                        Text("自动同步中国区和国际区的活动数据").font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { syncCnGlobal },
-                        set: { newVal in
-                            syncCnGlobal = newVal
-                            autoSaveSyncSetting(["sync_cn_global": newVal])
-                        }
-                    )).labelsHidden().tint(.teal)
-                    .disabled(!auth.isPro)
-                }
-            }
-            .padding(16).background(.white).cornerRadius(16)
-            
-            // ---- iGPSport Card ----
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "bicycle").font(.title2).foregroundColor(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("iGPSport").font(.headline)
-                        Text("iGPSport 活动数据同步").font(.caption).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    statusBadgeView(platform: "igpsport")
-                }
-                
-                VStack(alignment: .leading, spacing: 10) {
-                    FormField(label: "用户名", value: $igpsUsername, placeholder: "手机号或邮箱")
-                    FormField(label: "密码", value: $igpsPassword, isSecure: true, placeholder: "留空则不修改")
-                    
-                    HStack {
-                        VStack { Divider() }
-                        Text("或").font(.caption2).foregroundColor(.secondary)
-                        VStack { Divider() }
-                    }
-                    
-                    FormField(label: "手动 Bearer Token", value: $igpsToken, placeholder: "无法登录时手动填入")
-                }
-                .padding(14).background(Color.green.opacity(0.05)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.2), lineWidth: 1))
-                
-                HStack(spacing: 10) {
-                    Button(action: saveIGPSport) {
-                        HStack {
-                            if saving { ProgressView().tint(.white) }
-                            Image(systemName: "square.and.arrow.down")
-                            Text("保存并验证")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.green)
-                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
-                    }
-                    .disabled(saving)
-                    
-                    if igpsConfigured {
-                        Button(action: clearIGPSport) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .padding(12)
-                                .background(Color.red.opacity(0.1)).cornerRadius(12)
-                        }
-                        .disabled(saving)
-                    }
-                }
-            }
-            .padding(16).background(.white).cornerRadius(16)
-            
-            // ---- Intervals.icu Card ----
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "chart.bar.fill").font(.title2).foregroundColor(.indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Intervals.icu").font(.headline)
-                        Text("训练计划数据").font(.caption).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    statusBadgeView(platform: "intervals")
-                }
-                
-                VStack(alignment: .leading, spacing: 10) {
-                    FormField(label: "Athlete ID", value: $intervalsUserId, placeholder: "如 i12345")
-                    Text("在 Intervals.icu → Settings → Developer 中可找到")
-                        .font(.caption2).foregroundColor(.secondary)
-                    FormField(label: "API Key", value: $intervalsApiKey, isSecure: true, placeholder: "留空则不修改")
-                    Text("在 Intervals.icu → Settings → Developer → API Key 生成")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                .padding(14).background(Color.indigo.opacity(0.05)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.indigo.opacity(0.2), lineWidth: 1))
-                
-                HStack(spacing: 10) {
-                    Button(action: saveIntervals) {
-                        HStack {
-                            if saving { ProgressView().tint(.white) }
-                            Image(systemName: "square.and.arrow.down")
-                            Text("保存并验证")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.indigo)
-                        .foregroundColor(.white).font(.subheadline.weight(.semibold)).cornerRadius(12)
-                    }
-                    .disabled(saving)
-                    
-                    if intervalsConfigured {
-                        Button(action: clearIntervals) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .padding(12)
-                                .background(Color.red.opacity(0.1)).cornerRadius(12)
-                        }
-                        .disabled(saving)
-                    }
-                }
-            }
-            .padding(16).background(.white).cornerRadius(16)
-            
-            // ---- Strava Card ----
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2).foregroundColor(.orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Strava").font(.headline)
-                        Text("OAuth 授权连接").font(.caption).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    statusBadgeView(platform: "strava")
-                }
-                
-                HStack {
-                    Text(stravaConnected ? "✅ Strava 已连接" : "需要授权 Strava 账号")
-                        .font(.caption)
-                    Spacer()
-                    if stravaConnected {
-                        Button("断开连接") { disconnectStrava() }
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.red.opacity(0.1)).cornerRadius(8)
-                    } else {
-                        Button("连接 Strava") { connectStrava() }
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.orange).cornerRadius(8)
-                    }
-                }
-                .padding(14).background(Color.orange.opacity(0.05)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.2), lineWidth: 1))
-                
-                Divider()
-                
-                // Strava 直传 Toggle (auto-save)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.circle.fill").font(.caption).foregroundColor(.orange)
-                            Text("自动直传 Strava").font(.subheadline.weight(.medium))
-                            if !auth.isPro {
-                                Text("PRO").font(.system(size: 8, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 4).padding(.vertical, 1)
-                                    .background(Color.orange).cornerRadius(4)
-                            }
-                        }
-                        Text("从 CN 区拉取 FIT 文件直接上传到 Strava").font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { syncToStrava },
-                        set: { newVal in
-                            syncToStrava = newVal
-                            autoSaveSyncSetting(["sync_to_strava": newVal])
-                        }
-                    )).labelsHidden().tint(.orange)
-                    .disabled(!auth.isPro)
-                }
-                
-                if syncToStrava {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                        Text("开启后，请在 Garmin Connect Global 设置中取消 Strava 自动连接，避免活动重复上传。")
-                            .font(.caption2).foregroundColor(.orange)
-                    }
-                    .padding(10).background(Color.orange.opacity(0.1)).cornerRadius(10)
-                }
-            }
-            .padding(16).background(.white).cornerRadius(16)
-            
-            // ---- Sync Options Card ----
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.left.arrow.right").font(.title2).foregroundColor(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("同步选项").font(.headline)
-                        Text("数据同步规则与频率").font(.caption).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if saving {
-                        ProgressView().scaleEffect(0.7)
-                    }
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock").font(.caption)
-                        Text("同步频率").font(.subheadline.weight(.medium))
-                    }
-                    Slider(value: Binding(
-                        get: { syncFrequency },
-                        set: { newVal in
-                            syncFrequency = newVal
-                            autoSaveSyncSettingDebounced()
-                        }
-                    ), in: 1...1440, step: 1)
-                        .tint(.teal)
-                    Text(syncFrequencyText)
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                .padding(14).background(Color(UIColor.systemGray6)).cornerRadius(14)
-            }
-            .padding(16).background(.white).cornerRadius(16)
+
+    private func numberField(_ label: String, text: Binding<String>, prompt: String, decimal: Bool = false) -> some View {
+        LabeledContent(label) {
+            TextField(prompt, text: text)
+                .keyboardType(decimal ? .decimalPad : .numberPad)
+                .multilineTextAlignment(.trailing)
         }
     }
-    
+
+    @ViewBuilder
+    var profileTab: some View {
+        Section {
+            numberField("体重 (kg)", text: Binding(
+                get: { profile.weightKg.map { "\($0)" } ?? "" },
+                set: { profile.weightKg = Double($0) }
+            ), prompt: "如 72.5", decimal: true)
+
+            numberField("身高 (cm)", text: Binding(
+                get: { profile.heightCm.map { "\($0)" } ?? "" },
+                set: { profile.heightCm = Double($0) }
+            ), prompt: "如 175", decimal: true)
+
+            Picker("性别", selection: Binding(
+                get: { profile.gender ?? "" },
+                set: { profile.gender = $0.isEmpty ? nil : $0 }
+            )) {
+                Text("未设置").tag("")
+                Text("男").tag("male")
+                Text("女").tag("female")
+            }
+
+            if profile.birthDate != nil {
+                DatePicker("出生日期", selection: birthDateBinding, in: ...Date(), displayedComponents: .date)
+            } else {
+                LabeledContent("出生日期") {
+                    Button("设置") {
+                        profile.birthDate = "1990-01-01"
+                    }
+                }
+            }
+
+            numberField("最大心率 (bpm)", text: Binding(
+                get: { profile.hrMax.map { "\($0)" } ?? "" },
+                set: { profile.hrMax = Int($0) }
+            ), prompt: "如 190")
+
+            numberField("静息心率 (bpm)", text: Binding(
+                get: { profile.hrRest.map { "\($0)" } ?? "" },
+                set: { profile.hrRest = Int($0) }
+            ), prompt: "如 55")
+
+            numberField("FTP (W)", text: Binding(
+                get: { profile.ftpWatts.map { "\($0)" } ?? "" },
+                set: { profile.ftpWatts = Int($0) }
+            ), prompt: "如 200")
+
+            numberField("VO₂Max", text: Binding(
+                get: { profile.vo2Max.map { "\($0)" } ?? "" },
+                set: { profile.vo2Max = Double($0) }
+            ), prompt: "如 48.5", decimal: true)
+        } header: {
+            Label("个人档案", systemImage: "person.circle.fill")
+        } footer: {
+            if let syncAt = profile.garminSyncedAt ?? profile.updatedAt {
+                Text("基本身体数据，Garmin 同步后会自动覆盖。更新于 \(syncAt.prefix(16).replacingOccurrences(of: "T", with: " "))")
+            } else {
+                Text("基本身体数据，Garmin 同步后会自动覆盖")
+            }
+        }
+
+        Section {
+            saveButton("保存档案", action: saveProfile)
+        }
+
+        Section {
+            NavigationLink(destination: MemoryView()) {
+                Label("记忆管理", systemImage: "brain.head.profile")
+            }
+        }
+
+        subscriptionSection
+    }
+
+    var subscriptionSection: some View {
+        Section {
+            LabeledContent {
+                Text(auth.tier.uppercased())
+                    .fontWeight(.bold)
+                    .foregroundStyle(auth.isPro ? .orange : .secondary)
+            } label: {
+                Label("会员等级", systemImage: "crown.fill")
+            }
+            if let expiresAt = auth.tierExpiresAt {
+                LabeledContent("到期时间", value: String(expiresAt.prefix(10)))
+            }
+        } footer: {
+            if !auth.isPro {
+                Text("升级 Pro 解锁 AI 深度分析、Strava/Intervals 同步等高级功能")
+            }
+        }
+    }
+
+    private func saveButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                if saving {
+                    Spacer()
+                    ProgressView()
+                }
+            }
+        }
+        .disabled(saving)
+    }
+
+    // MARK: - Data Sources Tab (merged: Garmin + iGPSport + Intervals + Strava + Sync)
+
+    @ViewBuilder
+    var dataSourcesTab: some View {
+        // ---- Garmin CN ----
+        Section {
+            TextField("用户名（邮箱）", text: $cnUsername, prompt: Text("your@email.cn"))
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("密码", text: $cnPassword, prompt: Text("密码，留空则不修改"))
+            saveButton("保存并验证", action: saveGarminCn)
+            if !cnUsername.isEmpty {
+                Button("移除账号", role: .destructive, action: clearGarminCn)
+                    .disabled(saving)
+            }
+        } header: {
+            sourceHeader("佳明中国区", systemImage: "mappin.circle.fill", platform: "garmin_cn")
+        }
+
+        // ---- Garmin Global ----
+        Section {
+            TextField("用户名（邮箱）", text: $globalUsername, prompt: Text("your@email.com"))
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("密码", text: $globalPassword, prompt: Text("密码，留空则不修改"))
+            saveButton("保存并验证", action: saveGarminGlobal)
+            if !globalUsername.isEmpty {
+                Button("移除账号", role: .destructive, action: clearGarminGlobal)
+                    .disabled(saving)
+            }
+        } header: {
+            sourceHeader("Garmin Global", systemImage: "globe", platform: "garmin_global")
+        }
+
+        // CN/Global 双区同步 Toggle (auto-save)
+        Section {
+            Toggle(auth.isPro ? "CN/Global 双区同步" : "CN/Global 双区同步（PRO）", isOn: Binding(
+                get: { syncCnGlobal },
+                set: { newVal in
+                    syncCnGlobal = newVal
+                    autoSaveSyncSetting(["sync_cn_global": newVal])
+                }
+            ))
+            .disabled(!auth.isPro)
+        } footer: {
+            Text("自动同步中国区和国际区的活动数据")
+        }
+
+        // ---- iGPSport ----
+        Section {
+            TextField("用户名", text: $igpsUsername, prompt: Text("手机号或邮箱"))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("密码", text: $igpsPassword, prompt: Text("密码，留空则不修改"))
+            TextField("手动 Bearer Token", text: $igpsToken, prompt: Text("或手动填入 Bearer Token"))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            saveButton("保存并验证", action: saveIGPSport)
+            if igpsConfigured {
+                Button("清除配置", role: .destructive, action: clearIGPSport)
+                    .disabled(saving)
+            }
+        } header: {
+            sourceHeader("iGPSport", systemImage: "bicycle", platform: "igpsport")
+        } footer: {
+            Text("iGPSport 活动数据同步。无法用账号密码登录时，可手动填入 Bearer Token")
+        }
+
+        // ---- Intervals.icu ----
+        Section {
+            TextField("Athlete ID", text: $intervalsUserId, prompt: Text("Athlete ID，如 i12345"))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("API Key", text: $intervalsApiKey, prompt: Text("API Key，留空则不修改"))
+            saveButton("保存并验证", action: saveIntervals)
+            if intervalsConfigured {
+                Button("清除配置", role: .destructive, action: clearIntervals)
+                    .disabled(saving)
+            }
+        } header: {
+            sourceHeader("Intervals.icu", systemImage: "chart.bar.fill", platform: "intervals")
+        } footer: {
+            Text("Athlete ID 与 API Key 可在 Intervals.icu → Settings → Developer 中找到")
+        }
+
+        // ---- Strava ----
+        Section {
+            LabeledContent(stravaConnected ? "已连接" : "需要授权 Strava 账号") {
+                if stravaConnected {
+                    Button("断开连接", role: .destructive) { disconnectStrava() }
+                } else {
+                    Button("连接 Strava") { connectStrava() }
+                }
+            }
+
+            // Strava 直传 Toggle (auto-save)
+            Toggle(auth.isPro ? "自动直传 Strava" : "自动直传 Strava（PRO）", isOn: Binding(
+                get: { syncToStrava },
+                set: { newVal in
+                    syncToStrava = newVal
+                    autoSaveSyncSetting(["sync_to_strava": newVal])
+                }
+            ))
+            .disabled(!auth.isPro)
+        } header: {
+            sourceHeader("Strava", systemImage: "arrow.up.circle.fill", platform: "strava")
+        } footer: {
+            if syncToStrava {
+                Label("开启后，请在 Garmin Connect Global 设置中取消 Strava 自动连接，避免活动重复上传。", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            } else {
+                Text("从 CN 区拉取 FIT 文件直接上传到 Strava")
+            }
+        }
+
+        // ---- Sync Options ----
+        Section {
+            Slider(value: Binding(
+                get: { syncFrequency },
+                set: { newVal in
+                    syncFrequency = newVal
+                    autoSaveSyncSettingDebounced()
+                }
+            ), in: 1...1440, step: 1) {
+                Text("同步频率")
+            }
+        } header: {
+            Label("同步频率", systemImage: "clock")
+        } footer: {
+            Text(syncFrequencyText)
+        }
+    }
+
+    private func sourceHeader(_ title: String, systemImage: String, platform: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            statusBadgeView(platform: platform)
+        }
+    }
+
     @ViewBuilder
     private func statusBadgeView(platform: String) -> some View {
         if let s = platformStatuses.first(where: { $0.platform == platform }) {
             if s.configured && s.connected {
-                Text("✓")
-                    .font(.caption2.weight(.bold))
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.green.opacity(0.1)).cornerRadius(6)
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("已连接")
             } else if s.configured {
                 Image(systemName: "wifi.slash")
-                    .font(.caption2)
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("连接失败")
             }
         }
     }
-    
+
     var syncFrequencyText: String {
         let mins = Int(syncFrequency)
         if mins >= 60 {
@@ -607,56 +373,40 @@ struct SettingsView: View {
         }
         return "每 \(mins) 分钟 自动同步一次"
     }
-    
+
     // MARK: - Password Tab
-    
+
+    @ViewBuilder
     var passwordTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "lock.fill").font(.title2).foregroundColor(.orange)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("修改登录密码").font(.headline)
-                    Text("定期修改密码保障账号安全").font(.caption).foregroundColor(.secondary)
-                }
-            }
-            
-            FormField(label: "当前密码", value: $oldPwd, isSecure: true, placeholder: "请输入当前密码")
-            FormField(label: "新密码", value: $newPwd, isSecure: true, placeholder: "至少 6 个字符")
-            FormField(label: "确认密码", value: $confirmPwd, isSecure: true, placeholder: "再次输入新密码")
-            
+        Section {
+            SecureField("当前密码", text: $oldPwd)
+                .textContentType(.password)
+            SecureField("新密码（至少 6 个字符）", text: $newPwd)
+                .textContentType(.newPassword)
+            SecureField("确认新密码", text: $confirmPwd)
+                .textContentType(.newPassword)
+        } header: {
+            Label("修改登录密码", systemImage: "lock.fill")
+        } footer: {
             if !confirmPwd.isEmpty && newPwd == confirmPwd {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                    Text("密码匹配")
-                }.font(.caption).foregroundColor(.green)
-            }
-            
-            Button(action: changePassword) {
-                HStack {
-                    if saving { ProgressView().tint(.white) }
-                    Image(systemName: "lock.fill")
-                    Text("修改密码")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.orange)
-                .foregroundColor(.white).font(.headline).cornerRadius(14)
-            }
-            .disabled(saving)
-            
-            // 退出登录
-            Button(role: .destructive) {
-                auth.logout()
-            } label: {
-                Text("退出登录")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.red.opacity(0.1)).cornerRadius(14)
+                Label("密码匹配", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Text("定期修改密码保障账号安全")
             }
         }
-        .padding(16).background(.white).cornerRadius(16)
+
+        Section {
+            saveButton("修改密码", action: changePassword)
+        }
+
+        Section {
+            Button("退出登录", role: .destructive) {
+                auth.logout()
+            }
+        }
     }
-    
+
     // MARK: - Helpers
     
     private func platformIcon(_ platform: String) -> String {
@@ -1073,54 +823,6 @@ struct SettingsView: View {
                 }
             } catch {
                 await MainActor.run { message = ("error", "断开失败，请重试") }
-            }
-        }
-    }
-}
-
-// MARK: - Tab Button
-
-struct TabButton: View {
-    let title: String
-    var icon: String? = nil
-    let active: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                if let icon = icon {
-                    Image(systemName: icon).font(.caption2)
-                }
-                Text(title)
-            }
-            .font(.footnote.weight(active ? .semibold : .regular))
-            .foregroundColor(active ? .primary : .secondary)
-            .frame(maxWidth: .infinity, minHeight: 28)
-            .padding(.horizontal, 8)
-            .background(active ? Color.white : Color.clear)
-            .cornerRadius(8)
-        }
-    }
-}
-
-// MARK: - Form Field
-
-struct FormField: View {
-    let label: String
-    @Binding var value: String
-    var isSecure: Bool = false
-    var placeholder: String? = nil
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.subheadline.weight(.semibold))
-            if isSecure {
-                SecureField(placeholder ?? label, text: $value)
-                    .textFieldStyle(.roundedBorder)
-            } else {
-                TextField(placeholder ?? label, text: $value)
-                    .textFieldStyle(.roundedBorder)
             }
         }
     }

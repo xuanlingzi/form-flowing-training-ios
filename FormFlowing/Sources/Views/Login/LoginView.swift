@@ -8,133 +8,91 @@ struct LoginView: View {
     @State private var isRegister = false
     @State private var loading = false
     @State private var error = ""
-    @State private var showPassword = false
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            // Logo
-            VStack(spacing: 8) {
-                Image("BrandLogo")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .shadow(color: .teal.opacity(0.3), radius: 12, y: 6)
-                
-                Text("FormFlowing")
-                    .font(.system(size: 28, weight: .bold))
-                
-                Text("训练数据分析平台")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        Form {
+            Section {
+                VStack(spacing: 8) {
+                    Image("BrandLogo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+
+                    Text("FormFlowing")
+                        .font(.title.bold())
+
+                    Text("训练数据分析平台")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
             }
-            .padding(.bottom, 40)
-            
-            // Form
-            VStack(spacing: 16) {
-                Text(isRegister ? "注册账号" : "登录")
-                    .font(.title2.bold())
-                
-                if !error.isEmpty {
-                    HStack {
-                        Image(systemName: "exclamationmark.circle.fill")
-                        Text(error)
-                    }
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(12)
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("用户名").font(.subheadline.weight(.semibold))
-                    TextField("请输入用户名", text: $username)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("密码").font(.subheadline.weight(.semibold))
-                    if showPassword {
-                        TextField("请输入密码", text: $password)
-                            .textFieldStyle(.roundedBorder)
-                    } else {
-                        SecureField("请输入密码", text: $password)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-                
+
+            Section {
+                TextField("用户名", text: $username)
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("密码", text: $password)
+                    .textContentType(isRegister ? .newPassword : .password)
                 if isRegister {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("确认密码").font(.subheadline.weight(.semibold))
-                        SecureField("请再次输入密码", text: $confirmPassword)
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    SecureField("确认密码", text: $confirmPassword)
+                        .textContentType(.newPassword)
                 }
-                
+            } header: {
+                Text(isRegister ? "注册账号" : "登录")
+            } footer: {
+                if !error.isEmpty {
+                    Label(error, systemImage: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Section {
                 Button(action: handleSubmit) {
                     HStack {
                         if loading {
-                            ProgressView().tint(.white)
+                            ProgressView()
                         }
                         Text(isRegister ? "注册" : "登录")
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(LinearGradient(colors: [.teal, .green], startPoint: .leading, endPoint: .trailing))
-                    .foregroundColor(.white)
-                    .font(.headline)
-                    .cornerRadius(14)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(loading)
-                
-                Button {
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+                Button(isRegister ? "已有账号？去登录" : "没有账号？去注册") {
                     isRegister.toggle()
                     error = ""
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(isRegister ? "已有账号？" : "没有账号？")
-                            .foregroundColor(.secondary)
-                        Text(isRegister ? "去登录" : "去注册")
-                            .foregroundColor(.teal)
-                            .fontWeight(.semibold)
-                    }
-                    .font(.subheadline)
                 }
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
-            .padding(28)
-            .background(.white)
-            .cornerRadius(24)
-            .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
-            .padding(.horizontal)
-            
-            Spacer()
         }
-        .background(
-            LinearGradient(colors: [Color.teal.opacity(0.05), Color(UIColor.systemGroupedBackground)], startPoint: .top, endPoint: .bottom)
-        )
-        .ignoresSafeArea()
     }
-    
+
     private func handleSubmit() {
         guard !username.trimmingCharacters(in: .whitespaces).isEmpty,
               !password.isEmpty else {
             error = "请输入用户名和密码"
             return
         }
-        
+
         if isRegister && password != confirmPassword {
             error = "两次密码不一致"
             return
         }
-        
+
         loading = true
         error = ""
-        
+
         Task {
             do {
                 if isRegister {

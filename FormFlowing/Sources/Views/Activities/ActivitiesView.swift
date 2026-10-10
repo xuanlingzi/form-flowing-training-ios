@@ -14,96 +14,67 @@ struct ActivitiesView: View {
     @State private var page = 1
     @State private var hasMore = true
     @State private var loadingMore = false
-    @State private var appear = false
-    @State private var scrollOffset: CGFloat = 0
     @State private var showUploadSheet = false
-    
-    private var collapseProgress: CGFloat {
-        min(max(scrollOffset / 60, 0), 1)
-    }
     
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
-                    if loading && activities.isEmpty {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("加载活动列表...")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 100)
-                    } else if activities.isEmpty {
-                        VStack(spacing: 16) {
-                            Image(systemName: "figure.run.circle")
-                                .font(.system(size: 56))
-                                .foregroundStyle(.linearGradient(colors: [.teal, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            Text("暂无活动数据")
-                                .font(.headline).foregroundColor(.secondary)
-                            Text("上传 FIT 文件或连接 Garmin 同步数据")
-                                .font(.caption).foregroundColor(Color(UIColor.tertiaryLabel))
-                        }
-                        .padding(.top, 100)
-                    } else {
-                        LazyVStack(spacing: 14) {
-                            ForEach(Array(activities.enumerated()), id: \.element.id) { idx, act in
-                                NavigationLink(destination: ActivityDetailView(activityId: act.activityId)) {
-                                    ActivityCard(activity: act, onDeepAnalysis: {
-                                        triggerDeepAnalysis(activityId: act.activityId)
-                                    })
-                                }
-                                .buttonStyle(.plain)
-                                .opacity(appear ? 1 : 0)
-                                .offset(y: appear ? 0 : 20)
-                                .animation(.easeOut(duration: 0.4).delay(Double(min(idx, 8)) * 0.05), value: appear)
-                            }
-                            
-                            // 滑动到底部加载更多
-                            if hasMore {
-                                ProgressView()
-                                    .padding()
-                                    .onAppear {
-                                        if !loadingMore && !loading {
-                                            page += 1
-                                            Task { await loadActivities(isLoadMore: true) }
-                                        }
-                                    }
-                            } else if !activities.isEmpty {
-                                Text("没有更多了")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding()
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical)
+            List {
+                ForEach(activities) { act in
+                    NavigationLink(destination: ActivityDetailView(activityId: act.activityId)) {
+                        ActivityCard(activity: act, onDeepAnalysis: {
+                            triggerDeepAnalysis(activityId: act.activityId)
+                        })
                     }
                 }
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ScrollOffsetKey.self,
-                            value: -geo.frame(in: .named("activitiesScroll")).origin.y
-                        )
+                
+                // 滑动到底部加载更多
+                if !activities.isEmpty {
+                    if hasMore {
+                        ProgressView()
+                            .id(activities.count)
+                            .frame(maxWidth: .infinity)
+                            .listRowSeparator(.hidden)
+                            .onAppear {
+                                if !loadingMore && !loading {
+                                    page += 1
+                                    Task { await loadActivities(isLoadMore: true) }
+                                }
+                            }
+                    } else {
+                        Text("没有更多了")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .listRowSeparator(.hidden)
                     }
-                )
+                }
             }
-            .coordinateSpace(name: "activitiesScroll")
-            .onPreferenceChange(ScrollOffsetKey.self) { value in
-                scrollOffset = value
+            .overlay {
+                if loading && activities.isEmpty {
+                    ProgressView("加载活动列表...")
+                } else if activities.isEmpty {
+                    ContentUnavailableView(
+                        "暂无活动数据",
+                        systemImage: "figure.run.circle",
+                        description: Text("上传 FIT 文件或连接 Garmin 同步数据")
+                    )
+                }
             }
-            .safeAreaInset(edge: .top) {
-                activitiesHeader
+            .navigationTitle("运动日志")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showUploadSheet = true
+                    } label: {
+                        Label("上传活动", systemImage: "square.and.arrow.up")
+                    }
+                }
             }
-            .background(Color(UIColor.systemGroupedBackground))
-            .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 await loadActivities(isLoadMore: false)
             }
             .task {
                 await loadActivities()
-                withAnimation { appear = true }
             }
             .sheet(isPresented: $showUploadSheet) {
                 NavigationStack {
@@ -113,25 +84,6 @@ struct ActivitiesView: View {
                 .presentationDragIndicator(.visible)
             }
         }
-    }
-    
-    private var activitiesHeader: some View {
-        return HStack(alignment: .center) {
-            Text("运动日志")
-                .font(.system(size: 20, weight: .bold))
-            Spacer()
-            Button(action: {
-                showUploadSheet = true
-            }) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.linearGradient(colors: [.teal, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal)
-        .frame(height: 44)
-        .background(Color(UIColor.systemBackground))
     }
     
     private func loadActivities(isLoadMore: Bool = false) async {
@@ -226,148 +178,114 @@ struct ActivityCard: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             // 顶部：运动类型 + 活动名
             HStack(spacing: 12) {
                 Text(sportConfig.icon)
                     .font(.title2)
-                    .frame(width: 48, height: 48)
-                    .background(sportConfig.color.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(activity.activityName ?? "未命名活动")
-                            .font(.system(size: 15, weight: .semibold))
-                            .lineLimit(1).foregroundColor(.primary)
-                        
-                        if activity.analysisStatus == "processing" || activity.analysisStatus == "pending" {
-                            HStack(spacing: 3) {
-                                ProgressView().scaleEffect(0.5)
-                                Text("分析中").font(.system(size: 9, weight: .semibold))
-                            }
-                            .foregroundColor(.purple)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.purple.opacity(0.1))
-                            .clipShape(Capsule())
-                        }
-                    }
+                    Text(activity.activityName ?? "未命名活动")
+                        .font(.headline)
+                        .lineLimit(1)
                     
                     HStack(spacing: 6) {
-                        Text(dateText).font(.system(size: 12)).foregroundColor(.secondary)
-                        Text("·").foregroundColor(Color(UIColor.quaternaryLabel))
-                        Text(sportConfig.label)
-                            .font(.system(size: 11, weight: .medium)).foregroundColor(sportConfig.color)
+                        Text(dateText)
+                        Text("·")
+                        Text(sportConfig.label).foregroundStyle(sportConfig.color)
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
                 
-                if let tier = activity.analysisTier {
+                if activity.analysisStatus == "processing" || activity.analysisStatus == "pending" {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("分析中")
+                } else if let tier = activity.analysisTier {
                     let isPro = tier != "fast"
                     PillBadge(text: isPro ? "PRO" : "FAST", color: isPro ? .purple : .teal)
                 }
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(Color(UIColor.quaternaryLabel))
             }
-            .padding(16)
-            
-            Divider().padding(.horizontal)
             
             // 核心指标
             HStack(spacing: 0) {
-                StatPill(value: distanceText, unit: "km", label: "距离", icon: "arrow.left.and.right")
-                StatPill(value: durationText, label: "时间", icon: "clock")
+                StatPill(value: distanceText, unit: "km", label: "距离")
+                StatPill(value: durationText, label: "时间")
                 if let hr = activity.avgHeartRate {
-                    StatPill(value: "\(hr)", unit: "bpm", label: "心率", icon: "heart.fill")
+                    StatPill(value: "\(hr)", unit: "bpm", label: "心率")
                 }
                 if let pwr = activity.avgPower {
-                    StatPill(value: "\(pwr)", unit: "W", label: "功率", icon: "bolt.fill")
+                    StatPill(value: "\(pwr)", unit: "W", label: "功率")
                 }
                 if let cal = activity.totalCalories, activity.avgPower == nil {
-                    StatPill(value: "\(cal)", unit: "kcal", label: "热量", icon: "flame.fill")
+                    StatPill(value: "\(cal)", unit: "kcal", label: "热量")
                 }
             }
-            .padding(.horizontal, 8).padding(.vertical, 12)
             
             // AI 分析摘要
             if let summary = analysisSummary {
-                Divider().padding(.horizontal)
+                // 结论
+                if let conclusion = summary.conclusion, !conclusion.isEmpty {
+                    Label(conclusion, systemImage: "brain")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    // 结论
-                    if let conclusion = summary.conclusion, !conclusion.isEmpty {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "brain")
-                                .font(.system(size: 11)).foregroundColor(.purple)
-                            Text(conclusion)
-                                .font(.system(size: 12)).foregroundColor(.secondary)
-                                .lineLimit(2)
+                // 标签
+                let strengths = summary.strengths?.prefix(3) ?? []
+                let improvements = summary.improvements?.prefix(2) ?? []
+                
+                if !strengths.isEmpty || !improvements.isEmpty {
+                    FlowLayout(spacing: 4) {
+                        ForEach(Array(strengths.enumerated()), id: \.offset) { _, s in
+                            SummaryTag(text: s, systemImage: "checkmark.circle.fill", color: .green)
                         }
-                    }
-                    
-                    // 标签
-                    let strengths = summary.strengths?.prefix(3) ?? []
-                    let improvements = summary.improvements?.prefix(2) ?? []
-                    
-                    if !strengths.isEmpty || !improvements.isEmpty {
-                        FlowLayout(spacing: 4) {
-                            ForEach(Array(strengths.enumerated()), id: \.offset) { _, s in
-                                HStack(alignment: .top, spacing: 3) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 8)).foregroundColor(.green)
-                                        .padding(.top, 2)
-                                    Text(s).font(.system(size: 9, weight: .medium))
-                                        .foregroundColor(Color(red: 0.02, green: 0.47, blue: 0.34))
-                                        .multilineTextAlignment(.leading)
-                                        .lineLimit(3)
-                                }
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.green.opacity(0.1))
-                                .clipShape(Capsule())
-                            }
-                            
-                            ForEach(Array(improvements.enumerated()), id: \.offset) { _, s in
-                                HStack(alignment: .top, spacing: 3) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.system(size: 8)).foregroundColor(.orange)
-                                        .padding(.top, 2)
-                                    Text(s).font(.system(size: 9, weight: .medium))
-                                        .foregroundColor(Color(red: 0.71, green: 0.33, blue: 0.04))
-                                        .multilineTextAlignment(.leading)
-                                        .lineLimit(3)
-                                }
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.1))
-                                .clipShape(Capsule())
-                            }
-                            
-                            // 深度分析按钮
-                            if activity.analysisTier == "fast" {
-                                Button(action: {
-                                    onDeepAnalysis?()
-                                }) {
-                                    HStack(spacing: 3) {
-                                        Text("🔬").font(.system(size: 8))
-                                        Text("深度分析").font(.system(size: 9, weight: .semibold)).foregroundColor(.purple)
-                                    }
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Color.purple.opacity(0.1))
-                                    .overlay(Capsule().stroke(Color.purple.opacity(0.3), lineWidth: 0.5))
-                                    .clipShape(Capsule())
-                                }
-                            }
+                        
+                        ForEach(Array(improvements.enumerated()), id: \.offset) { _, s in
+                            SummaryTag(text: s, systemImage: "exclamationmark.triangle.fill", color: .orange)
                         }
                     }
                 }
-                .padding(.horizontal).padding(.vertical, 10)
+                
+                // 深度分析按钮
+                if activity.analysisTier == "fast" {
+                    Button {
+                        onDeepAnalysis?()
+                    } label: {
+                        Label("深度分析", systemImage: "sparkle.magnifyingglass")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.purple)
+                }
             }
         }
-        .background(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Summary Tag
+
+struct SummaryTag: View {
+    let text: String
+    let systemImage: String
+    let color: Color
+    
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .font(.caption2)
+            .foregroundStyle(color)
+            .multilineTextAlignment(.leading)
+            .lineLimit(3)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
     }
 }
 
@@ -421,34 +339,23 @@ struct StatPill: View {
     let value: String
     var unit: String? = nil
     let label: String
-    var icon: String? = nil
     
     var body: some View {
         VStack(spacing: 4) {
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.callout.weight(.bold))
+                    .fontDesign(.rounded)
                 if let unit = unit {
                     Text(unit)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
             Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - StatItem (for compatibility)
-
-struct StatItem: View {
-    let value: String
-    var unit: String? = nil
-    let label: String
-    var body: some View {
-        StatPill(value: value, unit: unit, label: label)
     }
 }

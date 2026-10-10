@@ -6,108 +6,88 @@ struct MemoryView: View {
     @State private var editingTypes: Set<String> = []
     @State private var loading = true
     @State private var saving = false
-    
+
     var editableMemories: [MemoryItem] {
         memories.filter { $0.editable == true }
     }
-    
+
     var aiMemories: [MemoryItem] {
         memories.filter { $0.editable != true }
     }
-    
+
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 16) {
-                    if loading {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
-                    } else {
-                        // 可编辑
-                        if !editableMemories.isEmpty {
-                            Text("可编辑数据").font(.headline).padding(.horizontal)
-                            ForEach(editableMemories) { item in
-                                memoryCard(item: item)
+        List {
+            if !editableMemories.isEmpty {
+                Section("可编辑数据") {
+                    ForEach(editableMemories) { item in
+                        memoryRow(item: item)
+                    }
+                }
+            }
+
+            if !aiMemories.isEmpty {
+                Section("AI 生成数据") {
+                    ForEach(aiMemories) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            LabeledContent {
+                                Text("v\(item.version ?? 0)")
+                            } label: {
+                                Text(item.label ?? item.type).font(.subheadline.weight(.semibold))
                             }
-                        }
-                        
-                        // AI 生成
-                        if !aiMemories.isEmpty {
-                            Text("AI 生成数据").font(.headline).padding(.horizontal).padding(.top, 8)
-                            ForEach(aiMemories) { item in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Text(item.label ?? item.type)
-                                            .font(.subheadline.weight(.semibold))
-                                        Spacer()
-                                        Text("v\(item.version ?? 0)")
-                                            .font(.caption2).foregroundColor(.secondary)
-                                    }
-                                    MarkdownTextView(markdown: item.content ?? "暂无数据", baseFontSize: 13)
-                                }
-                                .padding(16)
-                                .background(.white)
-                                .cornerRadius(16)
-                                .padding(.horizontal)
-                            }
+                            MarkdownTextView(markdown: item.content ?? "暂无数据", baseFontSize: 13)
                         }
                     }
                 }
-                .padding(.vertical)
-                .frame(width: geometry.size.width)
-                .clipped()
             }
         }
-        .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
+        .overlay {
+            if loading {
+                ProgressView()
+            } else if memories.isEmpty {
+                ContentUnavailableView("暂无数据", systemImage: "brain.head.profile")
+            }
+        }
         .navigationTitle("记忆管理")
         .navigationBarTitleDisplayMode(.inline)
         .hideTabBar()
         .task { await loadMemories() }
     }
-    
+
     @ViewBuilder
-    func memoryCard(item: MemoryItem) -> some View {
+    func memoryRow(item: MemoryItem) -> some View {
+        let isEditing = editingTypes.contains(item.type)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(item.label ?? item.type).font(.subheadline.weight(.semibold))
                 Spacer()
-                if editingTypes.contains(item.type) {
-                    Button("保存") { saveMemory(type: item.type) }
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 4)
-                        .background(Color.teal).cornerRadius(8)
+                if isEditing {
                     Button("取消") { editingTypes.remove(item.type) }
-                        .font(.caption).foregroundColor(.secondary)
+                        .buttonStyle(.bordered)
+                    Button("保存") { saveMemory(type: item.type) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(saving)
                 } else {
                     Button("编辑") {
                         editingContent[item.type] = item.content ?? ""
                         editingTypes.insert(item.type)
                     }
-                    .font(.caption).foregroundColor(.teal)
+                    .buttonStyle(.bordered)
                 }
             }
-            
-            if editingTypes.contains(item.type) {
+            .controlSize(.small)
+
+            if isEditing {
                 TextEditor(text: Binding(
                     get: { editingContent[item.type] ?? "" },
                     set: { editingContent[item.type] = $0 }
                 ))
-                .frame(minHeight: 100)
-                .padding(8)
-                .background(Color(UIColor.systemGray6))
-                .cornerRadius(10)
+                .frame(minHeight: 120)
             } else {
                 MarkdownTextView(markdown: item.content ?? "暂无数据", baseFontSize: 13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .clipped()
             }
         }
-        .padding(16)
-        .background(.white)
-        .cornerRadius(16)
-        .padding(.horizontal)
     }
-    
+
     private func loadMemories() async {
         if let cached = await APIService.shared.cached("/memory", as: MemoryListResponse.self) {
             await MainActor.run {
@@ -115,7 +95,7 @@ struct MemoryView: View {
                 loading = false
             }
         }
-        
+
         do {
             let res = try await APIService.shared.getMemories()
             await MainActor.run {
@@ -123,12 +103,12 @@ struct MemoryView: View {
                 loading = false
             }
         } catch {
-            await MainActor.run { 
+            await MainActor.run {
                 if memories.isEmpty { loading = false }
             }
         }
     }
-    
+
     private func saveMemory(type: String) {
         guard let content = editingContent[type] else { return }
         saving = true
