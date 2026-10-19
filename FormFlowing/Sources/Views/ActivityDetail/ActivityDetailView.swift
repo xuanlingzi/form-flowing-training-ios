@@ -61,6 +61,9 @@ struct ActivityDetailView: View {
                         if laps.count > 1 {
                             lapsSection
                         }
+
+                        // 本场负荷与历史对比（无指标时不显示）
+                        ActivityMetricsSection(activityId: activityId)
                         
                         // AI 分析
                         if let analysis = analysis {

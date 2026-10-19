@@ -17,6 +17,8 @@
 		5E589485A6A36B441853F307 /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C0C54459BB0A273CF8A037 /* TrainingView.swift */; };
 		8A31FED933F67F9A2A9ACDF7 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA582F4EFB4086DA5F50C141 /* APIService.swift */; };
 		8BC5264A0AEDB5F2942FEF49 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1284971F48863E4C1CDDA4 /* AuthManager.swift */; };
+		7A3E5C0100000000000000A1 /* TrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E5C0100000000000000F1 /* TrendsView.swift */; };
+		7A3E5C0100000000000000A2 /* ActivityMetricsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E5C0100000000000000F2 /* ActivityMetricsSection.swift */; };
 		BBD75F5155116BD4E9CEE01D /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC87358F2FE20B8ADBA406CF /* HomeView.swift */; };
 		BDF05C45C34C76B81BB26C52 /* ActivitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9C57982965E1564AE86877 /* ActivitiesView.swift */; };
 		CACH00020000000000000000 /* CacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACH00010000000000000000 /* CacheService.swift */; };
@@ -43,6 +45,8 @@
 		CACH00010000000000000000 /* CacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheService.swift; sourceTree = "<group>"; };
 		CDEB4145A6705933066488CC /* UploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadView.swift; sourceTree = "<group>"; };
 		D5112AA91BB56AB5E9E8065F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		7A3E5C0100000000000000F1 /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
+		7A3E5C0100000000000000F2 /* ActivityMetricsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityMetricsSection.swift; sourceTree = "<group>"; };
 		DC87358F2FE20B8ADBA406CF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		E46E9AD4938097F1FEA12334 /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -87,6 +91,7 @@
 				538B282C81BEB339FA223535 /* Memory */,
 				C47A93A8851E93B036444DAD /* Settings */,
 				6F1316A2AA66623685B84D50 /* Training */,
+				7A3E5C01000000000000000B /* Trends */,
 				EAF080B68E1824D1893CD41D /* Upload */,
 			);
 			path = Views;
@@ -130,6 +135,15 @@
 				E46E9AD4938097F1FEA12334 /* ActivityDetailView.swift */,
 			);
 			path = ActivityDetail;
+			sourceTree = "<group>";
+		};
+		7A3E5C01000000000000000B /* Trends */ = {
+			isa = PBXGroup;
+			children = (
+				7A3E5C0100000000000000F2 /* ActivityMetricsSection.swift */,
+				7A3E5C0100000000000000F1 /* TrendsView.swift */,
+			);
+			path = Trends;
 			sourceTree = "<group>";
 		};
 		9AD4E608ED1569540F1B4441 /* Home */ = {
@@ -273,6 +287,8 @@
 				CFE5AE6735A26869FD7B043B /* FormFlowingApp.swift in Sources */,
 				5A2715F53F2358A42218CB0B /* GarminLocalization.swift in Sources */,
 				BBD75F5155116BD4E9CEE01D /* HomeView.swift in Sources */,
+				7A3E5C0100000000000000A1 /* TrendsView.swift in Sources */,
+				7A3E5C0100000000000000A2 /* ActivityMetricsSection.swift in Sources */,
 				DAD2FD2221967FE94A2EA282 /* LoginView.swift in Sources */,
 				395481FFAB56E43FB666281A /* MainTabView.swift in Sources */,
 				CD49F78E6BCCB197A1B550D7 /* MarkdownTextView.swift in Sources */,

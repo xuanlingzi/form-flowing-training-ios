@@ -290,8 +290,19 @@ final class APIService: @unchecked Sendable {
         return try await request("/activity/\(id)/records")
     }
     
+    // MARK: - 训练趋势
+
+    func getTrends() async throws -> TrendsResponse {
+        return try await request("/trends")
+    }
+
+    /// 单场派生指标 + 此前历史；404 表示该活动没有指标
+    func getActivityMetrics(id: Int) async throws -> ActivityMetricsResponse {
+        return try await request("/trends/activity/\(id)")
+    }
+
     // MARK: - 分析
-    
+
     func triggerAnalysis(activityId: Int, tier: String = "pro", extraPrompt: String? = nil) async throws {
         var body: [String: Any] = [:]
         if let extraPrompt, !extraPrompt.isEmpty {

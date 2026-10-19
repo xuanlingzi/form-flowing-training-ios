@@ -621,3 +621,240 @@ enum AnyCodableValue: Codable, Sendable {
     }
 }
 
+
+// MARK: - Training Trends（/trends）
+//
+// 注意：convertFromSnakeCase 会把数字后的字母转大写（best_42d → best42D），
+// 所以含数字的字段都显式写 CodingKeys。数值字段一律 Double?，后端可能给 null。
+
+struct TrendsResponse: Codable, Sendable {
+    let asOf: String?
+    let activityCount365d: Int?
+    let pmc: TrendsPMC?
+    let weekly: [TrendsWeek]?
+    let powerCurve: [PowerCurvePoint]?
+    let eftp90d: Double?
+    let ftpSetting: Double?
+    let aerobic: TrendsAerobic?
+    let fatigue: TrendsFatigue?
+    let runBests: [RunBest]?
+    let runEf: [AerobicPeriod]?
+
+    enum CodingKeys: String, CodingKey {
+        case asOf, pmc, weekly, powerCurve, ftpSetting, aerobic, fatigue, runBests, runEf
+        case activityCount365d = "activityCount365D"
+        case eftp90d = "eftp90D"
+    }
+}
+
+/// PMC 汇总；没有数据时后端返回 {}，所以全部可选
+struct TrendsPMC: Codable, Sendable {
+    let ctl: Double?
+    let atl: Double?
+    let tsb: Double?
+    let ctl28dAgo: Double?
+    let ctlRampPerWeek: Double?
+    let series: [PMCPoint]?
+
+    enum CodingKeys: String, CodingKey {
+        case ctl, atl, tsb, ctlRampPerWeek, series
+        case ctl28dAgo = "ctl28DAgo"
+    }
+}
+
+struct PMCPoint: Codable, Sendable, Identifiable {
+    var id: String { date }
+    let date: String
+    let tss: Double?
+    let ctl: Double?
+    let atl: Double?
+    let tsb: Double?
+}
+
+struct TrendsWeek: Codable, Sendable, Identifiable {
+    var id: String { weekStart }
+    let weekStart: String
+    let count: Int?
+    let hours: Double?
+    let tss: Double?
+    let powerZonesS: [Double]?
+    let hrZonesS: [Double]?
+}
+
+struct PowerCurvePoint: Codable, Sendable, Identifiable {
+    var id: String { key }
+    let duration: String
+    let key: String
+    let best42d: Double?
+    let best42dDate: String?
+    let bestPrev42d: Double?
+    let best365d: Double?
+    let best365dDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case duration, key
+        case best42d = "best42D"
+        case best42dDate = "best42DDate"
+        case bestPrev42d = "bestPrev42D"
+        case best365d = "best365D"
+        case best365dDate = "best365DDate"
+    }
+}
+
+struct AerobicPeriod: Codable, Sendable, Identifiable {
+    var id: String { label }
+    let label: String
+    let sessions: Int?
+    let efMedian: Double?
+    let decouplingMedian: Double?
+}
+
+struct TrendsAerobic: Codable, Sendable {
+    let periods: [AerobicPeriod]?
+    let recent: [AerobicSession]?
+}
+
+/// recent 里的单场稳态骑行，只取用得到的字段
+struct AerobicSession: Codable, Sendable {
+    let date: String?
+    let ef: Double?
+    let decouplingPct: Double?
+}
+
+struct FatigueBest: Codable, Sendable {
+    let best90d: Double?
+    let bestPrev90d: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case best90d = "best90D"
+        case bestPrev90d = "bestPrev90D"
+    }
+}
+
+struct TrendsFatigue: Codable, Sendable {
+    let p5mAfter1000kj: FatigueBest?
+    let p5mAfter2000kj: FatigueBest?
+    let freshP5m90d: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case p5mAfter1000kj = "p5mAfter1000Kj"
+        case p5mAfter2000kj = "p5mAfter2000Kj"
+        case freshP5m90d = "freshP5M90D"
+    }
+}
+
+struct RunBest: Codable, Sendable, Identifiable {
+    var id: String { key }
+    let distance: String
+    let key: String
+    let best90dS: Double?
+    let best90dDate: String?
+    let best365dS: Double?
+    let best365dDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case distance, key
+        case best90dS = "best90DS"
+        case best90dDate = "best90DDate"
+        case best365dS = "best365DS"
+        case best365dDate = "best365DDate"
+    }
+}
+
+// MARK: - 单场活动指标（/trends/activity/{id}）
+
+struct ActivityMetricsResponse: Codable, Sendable {
+    let metrics: ActivityMetrics
+    let history: ActivityMetricsHistory
+}
+
+/// history 只含这场活动开始之前的数据
+struct ActivityMetricsHistory: Codable, Sendable {
+    let pmc: TrendsPMC?
+    let powerCurve: [PowerCurvePoint]?
+    let runBests: [RunBest]?
+    let eftp90d: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case pmc, powerCurve, runBests
+        case eftp90d = "eftp90D"
+    }
+}
+
+/// activity_metrics 表的一行。数值宽松解析（数字或数字字符串都接受），
+/// 后端以后新增列也不影响解码。
+struct ActivityMetrics: Codable, Sendable {
+    let loadTss: Double?
+    let loadSource: String?
+    let intensityFactor: Double?
+    let np: Double?
+    let ftpUsed: Double?
+    let ef: Double?
+    let decouplingPct: Double?
+    let workKj: Double?
+    /// 功率曲线：key（p5s…p60m）→ 瓦数
+    let powerBests: [String: Double]
+    /// 跑步最快用时：key（run_1k_s…run_hm_s）→ 秒
+    let runBests: [String: Double]
+
+    static let powerKeys: [(key: String, label: String)] = [
+        ("p5s", "5s"), ("p15s", "15s"), ("p30s", "30s"), ("p1m", "1min"),
+        ("p3m", "3min"), ("p5m", "5min"), ("p8m", "8min"), ("p10m", "10min"),
+        ("p20m", "20min"), ("p30m", "30min"), ("p60m", "60min"),
+    ]
+    static let runKeys: [(key: String, label: String)] = [
+        ("run_1k_s", "1km"), ("run_5k_s", "5km"), ("run_10k_s", "10km"), ("run_hm_s", "半马"),
+    ]
+
+    /// 用 snake_case 原名定位字段：convertFromSnakeCase 已把 key 转成驼峰
+    private struct RawKey: CodingKey {
+        let stringValue: String
+        init(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+
+        /// 与 JSONDecoder.convertFromSnakeCase 相同的转换
+        init(snake: String) {
+            let parts = snake.split(separator: "_").map(String.init)
+            stringValue = ([parts[0]] + parts.dropFirst().map { $0.capitalized }).joined()
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: RawKey.self)
+        func num(_ snake: String) -> Double? {
+            let k = RawKey(snake: snake)
+            if let v = try? c.decode(Double.self, forKey: k) { return v }
+            if let s = try? c.decode(String.self, forKey: k) { return Double(s) }
+            return nil
+        }
+        loadTss = num("load_tss")
+        loadSource = try? c.decode(String.self, forKey: RawKey(snake: "load_source"))
+        intensityFactor = num("intensity_factor")
+        np = num("np")
+        ftpUsed = num("ftp_used")
+        ef = num("ef")
+        decouplingPct = num("decoupling_pct")
+        workKj = num("work_kj")
+        var power: [String: Double] = [:]
+        for (key, _) in Self.powerKeys { if let v = num(key) { power[key] = v } }
+        powerBests = power
+        var run: [String: Double] = [:]
+        for (key, _) in Self.runKeys { if let v = num(key) { run[key] = v } }
+        runBests = run
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: RawKey.self)
+        try c.encodeIfPresent(loadTss, forKey: RawKey(stringValue: "load_tss"))
+        try c.encodeIfPresent(loadSource, forKey: RawKey(stringValue: "load_source"))
+        try c.encodeIfPresent(intensityFactor, forKey: RawKey(stringValue: "intensity_factor"))
+        try c.encodeIfPresent(np, forKey: RawKey(stringValue: "np"))
+        try c.encodeIfPresent(ftpUsed, forKey: RawKey(stringValue: "ftp_used"))
+        try c.encodeIfPresent(ef, forKey: RawKey(stringValue: "ef"))
+        try c.encodeIfPresent(decouplingPct, forKey: RawKey(stringValue: "decoupling_pct"))
+        try c.encodeIfPresent(workKj, forKey: RawKey(stringValue: "work_kj"))
+        for (k, v) in powerBests { try c.encode(v, forKey: RawKey(stringValue: k)) }
+        for (k, v) in runBests { try c.encode(v, forKey: RawKey(stringValue: k)) }
+    }
+}

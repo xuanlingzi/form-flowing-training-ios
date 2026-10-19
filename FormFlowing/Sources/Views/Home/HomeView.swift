@@ -60,6 +60,9 @@ struct HomeView: View {
                             }
                         }
                         
+                        // 训练趋势入口
+                        trendsEntry
+                        
                         // AI 分析
                         if !recentActivities.isEmpty {
                             analysisSection
@@ -230,6 +233,35 @@ struct HomeView: View {
                 Label("训练负荷", systemImage: "flame.fill")
             }
         }
+    }
+    
+    // MARK: - 训练趋势入口
+    
+    var trendsEntry: some View {
+        NavigationLink(destination: TrendsView()) {
+            GroupBox {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.title3)
+                        .foregroundStyle(.blue)
+                        .frame(width: 40, height: 40)
+                        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("训练趋势")
+                            .font(.subheadline.weight(.semibold))
+                        Text("体能 / 疲劳 / 状态、功率曲线、有氧效率等跨活动分析")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Card 6: 今日活动
