@@ -359,6 +359,28 @@ final class APIService: @unchecked Sendable {
     func getPlanDetail(planId: Int) async throws -> TrainingPlanDetailResponse {
         return try await request("/training/plan/\(planId)")
     }
+
+    /// 计划列表 + 全部计划详情，一次请求取齐（训练页用）
+    /// 服务端还没部署 /training/plan/details 时（旧版会按 {id} 路由返回 422/404），回落到逐个取详情
+    func getTrainingPlanBundle() async throws -> TrainingPlanBundleResponse {
+        do {
+            return try await request("/training/plan/details")
+        } catch APIError.serverError(let code, _) where code == 404 || code == 422 {
+            let list = try await getTrainingPlans()
+            var details: [TrainingPlanDetailResponse] = []
+            await withTaskGroup(of: (Int, TrainingPlanDetailResponse?).self) { group in
+                for (index, plan) in list.plans.enumerated() {
+                    group.addTask { (index, try? await self.getPlanDetail(planId: plan.trainingPlanId)) }
+                }
+                var ordered: [(Int, TrainingPlanDetailResponse)] = []
+                for await (index, detail) in group {
+                    if let detail { ordered.append((index, detail)) }
+                }
+                details = ordered.sorted { $0.0 < $1.0 }.map(\.1)
+            }
+            return TrainingPlanBundleResponse(plans: list.plans, details: details)
+        }
+    }
     
     func deletePlan(planId: Int) async throws {
         try await requestVoid("/training/plan/\(planId)", method: "DELETE")

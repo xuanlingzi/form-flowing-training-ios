@@ -126,6 +126,9 @@ struct TrainingView: View {
     @State private var workoutsByPlan: [Int: [Workout]] = [:]
     @State private var workoutPlanMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
     @State private var loading = true
+    /// 最近一次从服务端成功加载的时间，用于切回 tab 时跳过重复请求
+    @State private var lastLoadedAt: Date?
+    private static let reloadInterval: TimeInterval = 60
     @State private var currentMonth = Date()
     @State private var selectedDate: String?
     @State private var showDeleteAlert = false
@@ -356,8 +359,14 @@ struct TrainingView: View {
                     }
             )
             .task {
+                // 系统 TabView 每次切回本 tab 都会重跑 .task：刚加载过就不再请求，下拉刷新不受影响
+                if let last = lastLoadedAt, Date().timeIntervalSince(last) < Self.reloadInterval {
+                    selectedDate = todayStr()
+                    return
+                }
+                async let dailyCheckLoad: Void = loadDailyCheck()
                 await loadData()
-                await loadDailyCheck()
+                await dailyCheckLoad
                 selectedDate = todayStr()
             }
             .sheet(isPresented: $showGenSheet) {
@@ -702,136 +711,83 @@ struct TrainingView: View {
     // MARK: - Data
     
     private func loadData() async {
-        // 1. 先从本地缓存加载，立即显示
-        await loadFromCache()
+        // 1. 首次进入先用本地缓存立即出内容；有内容时后台刷新不再整页转圈
+        if lastLoadedAt == nil {
+            let hasCache = await loadFromCache()
+            if !hasCache { loading = true }
+        }
         
-        // 2. 后台请求更新
-        loading = true
+        // 2. 列表与全部计划详情一次请求取齐（原先 1+N 个请求）
         do {
             async let statusReq = try? APIService.shared.getPlanStatus()
-            async let plansReq = try APIService.shared.getTrainingPlans()
-            let (statusOpt, plansRes) = await (statusReq, try plansReq)
+            async let bundleReq = APIService.shared.getTrainingPlanBundle()
+            let (statusOpt, bundle) = await (statusReq, try bundleReq)
             
-            let fetchedPlans = plansRes.plans
-            var currentPlanId: Int?
-            
-            await MainActor.run {
-                self.plans = fetchedPlans
-                if let current = self.selectedPlan,
-                   !fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
-                    self.selectedPlan = nil
-                }
-                currentPlanId = fetchedPlans.first(where: { $0.status == "active" })?.trainingPlanId
-                    ?? fetchedPlans.first?.trainingPlanId
-            }
-            
-            // 并发加载所有计划的课程（而非串行循环）
-            if !fetchedPlans.isEmpty {
-                // 为每个 plan 创建独立 Task 并发请求 detail
-                let tasks = fetchedPlans.map { plan in
-                    Task { () -> (Int, [Workout])? in
-                        guard let detail = try? await APIService.shared.getPlanDetail(planId: plan.trainingPlanId) else { return nil }
-                        return (plan.trainingPlanId, detail.workouts)
-                    }
-                }
-                
-                // 收集所有结果
-                var allWorkouts: [Workout] = []
-                var groupedWorkouts: [Int: [Workout]] = [:]
-                var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
-                
-                for task in tasks {
-                    if let (planId, workoutsForPlan) = await task.value {
-                        allWorkouts.append(contentsOf: workoutsForPlan)
-                        groupedWorkouts[planId] = workoutsForPlan
-                        if let plan = fetchedPlans.first(where: { $0.trainingPlanId == planId }) {
-                            for workout in workoutsForPlan {
-                                planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
-                                    title: plan.planName,
-                                    intro: plan.description
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                await MainActor.run {
-                    self.workouts = allWorkouts
-                    self.workoutsByPlan = groupedWorkouts
-                    self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
-                    // 导航到最新计划的起始月（仅首次加载时）
-                    if let firstPlan = fetchedPlans.first,
-                       let startDate = firstPlan.startDate,
-                       let date = dateFromString(startDate) {
-                        self.currentMonth = date
-                    }
-                    self.loading = false
-                }
-            } else {
-                await MainActor.run {
-                    self.workouts = []
-                    self.workoutsByPlan = [:]
-                    self.workoutPlanMetaByWorkoutId = [:]
-                    self.loading = false
-                }
-            }
+            applyPlans(bundle.plans, details: bundle.details)
+            lastLoadedAt = Date()
             
             if statusOpt?.isGenerating == true {
-                await MainActor.run { generating = true }
+                let currentPlanId = bundle.plans.first(where: { $0.status == "active" })?.trainingPlanId
+                    ?? bundle.plans.first?.trainingPlanId
+                generating = true
                 startPolling(oldPlanId: currentPlanId)
             }
         } catch {
-            await MainActor.run { loading = false }
+            loading = false
         }
     }
     
-    private func loadFromCache() async {
-        // 加载 plans
-        guard let plansRes = await APIService.shared.cached("/training/plan", as: TrainingPlanListResponse.self) else { return }
-        let fetchedPlans = plansRes.plans
-        
-        await MainActor.run {
-            self.plans = fetchedPlans
-            if let current = self.selectedPlan,
-               !fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
-                self.selectedPlan = nil
+    /// 从本地缓存恢复，返回是否命中
+    private func loadFromCache() async -> Bool {
+        if let bundle = await APIService.shared.cached("/training/plan/details", as: TrainingPlanBundleResponse.self) {
+            applyPlans(bundle.plans, details: bundle.details)
+            return true
+        }
+        // 兼容升级前按计划逐个缓存的数据
+        guard let plansRes = await APIService.shared.cached("/training/plan", as: TrainingPlanListResponse.self) else { return false }
+        var details: [TrainingPlanDetailResponse] = []
+        for plan in plansRes.plans {
+            if let detail = await APIService.shared.cached("/training/plan/\(plan.trainingPlanId)", as: TrainingPlanDetailResponse.self) {
+                details.append(detail)
             }
         }
+        applyPlans(plansRes.plans, details: details)
+        return true
+    }
+    
+    private func applyPlans(_ fetchedPlans: [TrainingPlan], details: [TrainingPlanDetailResponse]) {
+        plans = fetchedPlans
+        if let current = selectedPlan,
+           !fetchedPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
+            selectedPlan = nil
+        }
         
-        if !fetchedPlans.isEmpty {
-            var allWorkouts: [Workout] = []
-            var groupedWorkouts: [Int: [Workout]] = [:]
-            var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
-            
-            for plan in fetchedPlans {
-                if let detail = await APIService.shared.cached("/training/plan/\(plan.trainingPlanId)", as: TrainingPlanDetailResponse.self) {
-                    allWorkouts.append(contentsOf: detail.workouts)
-                    groupedWorkouts[plan.trainingPlanId] = detail.workouts
-                    for workout in detail.workouts {
-                        planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
-                            title: plan.planName,
-                            intro: plan.description
-                        )
-                    }
-                }
-            }
-            
-            await MainActor.run {
-                self.workouts = allWorkouts
-                self.workoutsByPlan = groupedWorkouts
-                self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
-                if let firstPlan = fetchedPlans.first,
-                   let startDate = firstPlan.startDate,
-                   let date = dateFromString(startDate) {
-                    self.currentMonth = date
-                }
-                self.loading = false
-            }
-        } else {
-            await MainActor.run {
-                self.loading = false
+        let planById = Dictionary(fetchedPlans.map { ($0.trainingPlanId, $0) }, uniquingKeysWith: { a, _ in a })
+        var allWorkouts: [Workout] = []
+        var groupedWorkouts: [Int: [Workout]] = [:]
+        var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
+        for detail in details {
+            let planId = detail.plan.trainingPlanId
+            guard let plan = planById[planId] else { continue }
+            allWorkouts.append(contentsOf: detail.workouts)
+            groupedWorkouts[planId] = detail.workouts
+            for workout in detail.workouts {
+                planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
+                    title: plan.planName,
+                    intro: plan.description
+                )
             }
         }
+        workouts = allWorkouts
+        workoutsByPlan = groupedWorkouts
+        workoutPlanMetaByWorkoutId = planMetaByWorkoutId
+        // 导航到最新计划的起始月
+        if let firstPlan = fetchedPlans.first,
+           let startDate = firstPlan.startDate,
+           let date = dateFromString(startDate) {
+            currentMonth = date
+        }
+        loading = false
     }
     
     private func dateFromString(_ s: String) -> Date? {

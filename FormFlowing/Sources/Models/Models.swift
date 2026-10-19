@@ -382,6 +382,12 @@ struct TrainingPlanDetailResponse: Codable, Sendable {
     let workouts: [Workout]
 }
 
+/// GET /training/plan/details：计划列表 + 每个计划的详情
+struct TrainingPlanBundleResponse: Codable, Sendable {
+    let plans: [TrainingPlan]
+    let details: [TrainingPlanDetailResponse]
+}
+
 struct Workout: Codable, Identifiable, Sendable {
     var id: Int { trainingPlanWorkoutId }
     let trainingPlanWorkoutId: Int
