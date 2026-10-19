@@ -11,6 +11,9 @@ struct AnalysisSummary: Codable {
 struct ActivitiesView: View {
     @State private var activities: [ActivityListItem] = []
     @State private var loading = true
+    /// 最近一次加载第一页的时间：系统 TabView 每次切回都会重跑 .task，
+    /// 不节流的话每次切回都会把已翻到的列表重置成第一页
+    @State private var lastLoadedAt: Date?
     @State private var page = 1
     @State private var hasMore = true
     @State private var loadingMore = false
@@ -74,6 +77,7 @@ struct ActivitiesView: View {
                 await loadActivities(isLoadMore: false)
             }
             .task {
+                if let last = lastLoadedAt, Date().timeIntervalSince(last) < 60 { return }
                 await loadActivities()
             }
             .sheet(isPresented: $showUploadSheet) {
@@ -90,7 +94,9 @@ struct ActivitiesView: View {
         if !isLoadMore {
             page = 1
             hasMore = true
-            if let cached = await APIService.shared.cached("/activity/list?page=1&page_size=20", as: [ActivityListItem].self) {
+            lastLoadedAt = Date()
+            if activities.isEmpty,
+               let cached = await APIService.shared.cached("/activity/list?page=1&page_size=20", as: [ActivityListItem].self) {
                 await MainActor.run {
                     activities = cached
                     loading = false

@@ -7,6 +7,8 @@ struct HomeView: View {
     @State private var garminStatus: GarminUserStatus?
     @State private var recentActivities: [ActivityListItem] = []
     @State private var loading = true
+    /// 最近一次加载时间：系统 TabView 每次切回都会重跑 .task，刚加载过就跳过
+    @State private var lastLoadedAt: Date?
     @State private var syncing = false
     @State private var appear = false
     
@@ -99,6 +101,7 @@ struct HomeView: View {
                 await loadData()
             }
             .task {
+                if let last = lastLoadedAt, Date().timeIntervalSince(last) < 60 { return }
                 await loadData()
             }
         }
@@ -516,8 +519,9 @@ struct HomeView: View {
     }
     
     private func loadData() async {
-        // 1. 先从本地缓存加载，立即显示
-        await loadFromCache()
+        // 1. 首次进入先从本地缓存加载，立即显示
+        if lastLoadedAt == nil { await loadFromCache() }
+        lastLoadedAt = Date()
         
         // 2. 后台从 API 获取最新数据
         async let statusFetch: Void = {

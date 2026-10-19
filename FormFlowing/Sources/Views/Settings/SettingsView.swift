@@ -30,6 +30,10 @@ struct SettingsView: View {
     // 连接状态
     @State private var platformStatuses: [PlatformStatus] = []
     @State private var statusLoading = false
+    /// 系统 TabView 每次切回都会重跑 .task，按时间节流
+    @State private var lastLoadedAt: Date?
+    /// /account/status 会逐个实时登录 Garmin/iGPSport/Intervals 测连接，慢且有触发登录冷却的风险，单独放宽间隔
+    @State private var lastStatusCheckedAt: Date?
     
     // 密码
     @State private var oldPwd = ""
@@ -69,7 +73,10 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
             }
-            .task { await loadData() }
+            .task {
+                if let last = lastLoadedAt, Date().timeIntervalSince(last) < 60 { return }
+                await loadData()
+            }
         }
     }
 
@@ -434,8 +441,11 @@ struct SettingsView: View {
     // MARK: - Data
     
     private func loadData() async {
-        // 1. 先从本地缓存加载，立即显示
-        await loadFromCache()
+        // 1. 首次进入先从本地缓存加载，立即显示
+        if lastLoadedAt == nil { await loadFromCache() }
+        lastLoadedAt = Date()
+        let shouldCheckStatus = lastStatusCheckedAt.map { Date().timeIntervalSince($0) >= 300 } ?? true
+        if shouldCheckStatus { lastStatusCheckedAt = Date() }
         
         // 2. 后台请求，拿到最新数据后自动写入缓存并刷新 UI
         async let profileFetch: Void = {
@@ -473,6 +483,7 @@ struct SettingsView: View {
         }()
         
         async let statusFetch: Void = {
+            guard shouldCheckStatus else { return }
             if let statusRes = try? await APIService.shared.getAccountStatus() {
                 await MainActor.run { platformStatuses = statusRes.platforms }
             }
