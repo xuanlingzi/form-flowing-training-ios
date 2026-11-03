@@ -421,7 +421,7 @@ struct TrainingView: View {
 
                                 ForEach(plans) { item in
                                     planSelectionRow(
-                                        title: (item.mode == "goal_driven" ? "🎯 " : "") + item.planName,
+                                        title: (item.mode == "goal_driven" ? "🎯 " : "") + (item.status == "archived" ? "[已归档] " : "") + item.planName,
                                         isSelected: selectedPlan?.trainingPlanId == item.trainingPlanId,
                                         action: {
                                             selectedPlan = item
@@ -497,7 +497,7 @@ struct TrainingView: View {
                             planToRegenerate = nil
                         }
                     } message: {
-                        Text("当前训练计划「\(planToRegenerate?.planName ?? "")」尚未结束。\n\n重新生成将删除该计划及其所有课程，包括已推送到 Garmin 的训练。确定要继续吗？")
+                        Text("当前训练计划「\(planToRegenerate?.planName ?? "")」尚未结束。\n\n新计划生成成功后，当前计划会归档：新计划开始之前的课程保留，用来对比计划和实际；开始之后的课程（包括已推送到 Garmin 的训练）会被删除。生成失败时当前计划不受影响。\n\n确定要继续吗？")
                     }
                     .sheet(isPresented: $showPlanRegenerateSheet) {
                         GeneratePlanSheet(
@@ -862,20 +862,12 @@ struct TrainingView: View {
             req["goal_metrics"] = buildTrainingGoalDetails(from: form)
             req["extra_requirements"] = buildExtraRequirements(from: form)
             
-            let oldPlanId = selectedPlan?.trainingPlanId
-            
+            // 不再先删旧计划：新计划生成成功后由后端归档旧计划（开始日之前的课程保留，
+            // 之后的课程连同佳明侧删除），生成失败时旧计划原样保留。
+            // 轮询以“最新创建的计划换了”为完成信号，所以记下当前最新的计划 id。
+            let oldPlanId = plans.first?.trainingPlanId
+
             Task {
-                if let oldId = oldPlanId {
-                    try? await APIService.shared.deletePlan(planId: oldId)
-                    await MainActor.run {
-                        self.selectedPlan = nil
-                        self.workouts = []
-                        self.workoutsByPlan = [:]
-                        self.workoutPlanMetaByWorkoutId = [:]
-                        self.plans.removeAll { $0.trainingPlanId == oldId }
-                    }
-                }
-                
                 do {
                     try await APIService.shared.saveTrainingGoal(goal: goal)
                     _ = try await APIService.shared.startGoalPlan(req: req)
@@ -897,20 +889,12 @@ struct TrainingView: View {
             ]
             req["extra_requirements"] = buildExtraRequirements(from: form)
             
-            let oldPlanId = selectedPlan?.trainingPlanId
-            
+            // 不再先删旧计划：新计划生成成功后由后端归档旧计划（开始日之前的课程保留，
+            // 之后的课程连同佳明侧删除），生成失败时旧计划原样保留。
+            // 轮询以“最新创建的计划换了”为完成信号，所以记下当前最新的计划 id。
+            let oldPlanId = plans.first?.trainingPlanId
+
             Task {
-                if let oldId = oldPlanId {
-                    try? await APIService.shared.deletePlan(planId: oldId)
-                    await MainActor.run {
-                        self.selectedPlan = nil
-                        self.workouts = []
-                        self.workoutsByPlan = [:]
-                        self.workoutPlanMetaByWorkoutId = [:]
-                        self.plans.removeAll { $0.trainingPlanId == oldId }
-                    }
-                }
-                
                 do {
                     try await APIService.shared.saveTrainingGoal(goal: goal)
                     try await APIService.shared.generateTrainingPlan(req: req)
@@ -1035,28 +1019,22 @@ struct TrainingView: View {
                 guard !Task.isCancelled else { break }
                 
                 do {
-                    let res = try await APIService.shared.getTrainingPlans()
-                    let newPlans = res.plans
-                    if let latest = newPlans.first, latest.trainingPlanId != oldPlanId {
-                        await MainActor.run { 
-                            self.plans = newPlans
-                            if let current = self.selectedPlan,
-                               !newPlans.contains(where: { $0.trainingPlanId == current.trainingPlanId }) {
-                                self.selectedPlan = nil
-                            }
-                        }
-                        let detail = try await APIService.shared.getPlanDetail(planId: latest.trainingPlanId)
+                    // 目标驱动计划在入队时就建好了空的草稿计划，只看“最新计划换没换”
+                    // 会在首块还没生成时就停止轮询；以后端的生成状态为准。
+                    // 状态接口失败（status == nil）时退回旧判据：最新计划 id 变了。
+                    let status = try? await APIService.shared.getPlanStatus()
+                    if status?.isGenerating == true {
+                        checks += 1
+                        continue
+                    }
+                    let bundle = try await APIService.shared.getTrainingPlanBundle()
+                    if let latest = bundle.plans.first,
+                       status != nil || latest.trainingPlanId != oldPlanId {
                         await MainActor.run {
-                            self.workouts = detail.workouts
-                            self.workoutsByPlan = [latest.trainingPlanId: detail.workouts]
-                            var planMetaByWorkoutId: [Int: (title: String, intro: String?)] = [:]
-                            for workout in detail.workouts {
-                                planMetaByWorkoutId[workout.trainingPlanWorkoutId] = (
-                                    title: latest.planName,
-                                    intro: latest.description
-                                )
-                            }
-                            self.workoutPlanMetaByWorkoutId = planMetaByWorkoutId
+                            // 旧计划归档后仍在列表里：整体刷新（保留归档计划的历史课程），
+                            // 选中项切到最新创建的计划
+                            self.applyPlans(bundle.plans, details: bundle.details)
+                            self.selectedPlan = latest
                             if let startDate = latest.startDate, let d = self.dateFromString(startDate) {
                                 self.currentMonth = d
                             }
