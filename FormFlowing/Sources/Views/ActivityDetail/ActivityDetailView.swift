@@ -228,6 +228,29 @@ struct ActivityDetailView: View {
         return GroupBox {
             VStack(alignment: .leading, spacing: 14) {
                 MarkdownTextView(markdown: analysis.resultMd ?? "", baseFontSize: 13)
+
+                // 本场要点（新版以“类型：”开头）；旧分析里是记忆更新说明
+                if let delta = analysis.memoryDelta?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !delta.isEmpty {
+                    let isSessionPoints = delta.hasPrefix("类型：")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(isSessionPoints ? "本场要点" : "记忆更新（旧版）", systemImage: "note.text")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.purple)
+                        Text(delta)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        if isSessionPoints {
+                            Text("系统每周据此汇总运动员模型")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
                 
                 // MARK: - 追问区域
                 if analysis.canChat == true {

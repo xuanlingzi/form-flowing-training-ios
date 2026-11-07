@@ -25,6 +25,7 @@ targets:
         PRODUCT_NAME: FormFlowing
         PRODUCT_BUNDLE_IDENTIFIER: com.formflowing.app
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "佳境"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

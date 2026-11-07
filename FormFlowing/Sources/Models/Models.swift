@@ -449,6 +449,32 @@ struct MemoryListResponse: Codable, Sendable {
     let memories: [MemoryItem]
 }
 
+/// 单场分析的「本场要点」（GET /memory/session-points），运动员模型每周据此汇总
+struct SessionPointsResponse: Codable, Sendable {
+    let items: [SessionPointItem]
+}
+
+struct SessionPointItem: Codable, Identifiable, Sendable {
+    var id: Int { activityId }
+    let activityId: Int
+    let date: String?
+    let sport: String?
+    let name: String?
+    let sessionType: String?
+    let sessionTypeLabel: String?
+    let planMatch: String?
+    let dataQuality: String?
+    let dataQualityLabel: String?
+    let observations: [SessionPointObservation]?
+}
+
+struct SessionPointObservation: Codable, Sendable {
+    let kind: String?  // limiter | strength | execution | health | equipment
+    let kindLabel: String?
+    let text: String?
+    let confidence: String?  // high | medium | low
+}
+
 // MARK: - Goal-Driven Plan
 
 struct PlanProgressState: Codable, Sendable {
@@ -506,6 +532,82 @@ struct PlanProgressResponse: Codable, Sendable {
     let stats: PlanStats?
     let activeBlock: TrainingPlanBlock?
     let blocks: [TrainingPlanBlock]?
+    let macroPlan: MacroPlan?
+}
+
+/// 目标驱动计划首块制定的宏观阶段规划（/progress 的 macro_plan）。
+/// 内容来自 AI 输出，字段都按宽松方式解码，个别字段异常不影响整个进度面板。
+struct MacroPlan: Codable, Sendable {
+    let createdAt: String?
+    let goalAssessment: MacroGoalAssessment?
+    /// 今天处于第几周、哪个阶段；计划未开始为 nil
+    let position: MacroPosition?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        goalAssessment = try? c.decodeIfPresent(MacroGoalAssessment.self, forKey: .goalAssessment)
+        position = try? c.decodeIfPresent(MacroPosition.self, forKey: .position)
+    }
+}
+
+struct MacroGoalAssessment: Codable, Sendable {
+    let feasibility: String?  // feasible | tight | needs_target_adjustment
+    let keyBottleneck: String?
+    let estimatedCompletionDate: String?
+    let phases: [MacroPhase]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        feasibility = try? c.decodeIfPresent(String.self, forKey: .feasibility)
+        keyBottleneck = try? c.decodeIfPresent(String.self, forKey: .keyBottleneck)
+        estimatedCompletionDate = try? c.decodeIfPresent(String.self, forKey: .estimatedCompletionDate)
+        // 与后端一致：阶段列表里不是对象的项跳过，position.phaseIndex 按剩下的项计数
+        let raw = (try? c.decodeIfPresent([LossyMacroPhase].self, forKey: .phases)) ?? nil
+        phases = (raw ?? []).compactMap(\.value)
+    }
+}
+
+struct MacroPhase: Codable, Sendable {
+    let name: String?
+    /// 阶段周数，取整；缺失或非法为 0
+    let weeks: Int
+    let focus: String?
+    let keyWorkouts: [String]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+        focus = try? c.decodeIfPresent(String.self, forKey: .focus)
+        var n: Double?
+        if let v = try? c.decode(Double.self, forKey: .weeks) {
+            n = v
+        } else if let s = try? c.decode(String.self, forKey: .weeks) {
+            n = Double(s)
+        }
+        if let n, n.isFinite, n > 0, n < 1000 { weeks = Int(n) } else { weeks = 0 }
+        // key_workouts 可能是数组也可能是一句话
+        if let list = try? c.decode([String].self, forKey: .keyWorkouts) {
+            keyWorkouts = list
+        } else if let s = try? c.decode(String.self, forKey: .keyWorkouts), !s.isEmpty {
+            keyWorkouts = [s]
+        } else {
+            keyWorkouts = []
+        }
+    }
+}
+
+private struct LossyMacroPhase: Decodable {
+    let value: MacroPhase?
+    init(from decoder: Decoder) throws { value = try? MacroPhase(from: decoder) }
+}
+
+struct MacroPosition: Codable, Sendable {
+    let week: Int
+    /// 超出全部阶段时为 nil
+    let phaseIndex: Int?
+    let phaseStartWeek: Int?
+    let phaseEndWeek: Int?
 }
 
 struct PlanStats: Codable, Sendable {
@@ -596,14 +698,19 @@ struct UsageResponse: Codable, Sendable {
 /// 用于解析 limits 中的混合类型值（bool / int / string）
 enum AnyCodableValue: Codable, Sendable {
     case int(Int)
+    case double(Double)
     case bool(Bool)
     case string(String)
+    /// goal_metrics 里的 sports / train_days / lsd_days 是数组
+    case array([AnyCodableValue])
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let v = try? container.decode(Bool.self) { self = .bool(v); return }
         if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(Double.self) { self = .double(v); return }
         if let v = try? container.decode(String.self) { self = .string(v); return }
+        if let v = try? container.decode([AnyCodableValue].self) { self = .array(v); return }
         self = .string("")
     }
 
@@ -611,8 +718,22 @@ enum AnyCodableValue: Codable, Sendable {
         var container = encoder.singleValueContainer()
         switch self {
         case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
         case .bool(let v): try container.encode(v)
         case .string(let v): try container.encode(v)
+        case .array(let v): try container.encode(v)
+        }
+    }
+
+    /// 展示用文本：数组用顿号连接，空值为“-”
+    var displayText: String {
+        switch self {
+        case .int(let v): return String(v)
+        case .double(let v):
+            return v.rounded() == v && abs(v) < 1e15 ? String(Int(v)) : String(format: "%.1f", v)
+        case .bool(let v): return v ? "是" : "否"
+        case .string(let v): return v.isEmpty ? "-" : v
+        case .array(let v): return v.isEmpty ? "无" : v.map(\.displayText).joined(separator: "、")
         }
     }
 

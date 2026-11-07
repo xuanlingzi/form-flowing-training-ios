@@ -19,7 +19,7 @@ struct LoginView: View {
                         .frame(width: 80, height: 80)
                         .clipShape(RoundedRectangle(cornerRadius: 18))
 
-                    Text("FormFlowing")
+                    Text("佳境")
                         .font(.title.bold())
 
                     Text("训练数据分析平台")

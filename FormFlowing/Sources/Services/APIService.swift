@@ -409,6 +409,11 @@ final class APIService: @unchecked Sendable {
     func getMemories() async throws -> MemoryListResponse {
         return try await request("/memory")
     }
+
+    /// 最近几场分析的「本场要点」
+    func getSessionPoints(limit: Int = 5) async throws -> SessionPointsResponse {
+        return try await request("/memory/session-points?limit=\(limit)")
+    }
     
     func updateMemory(type: String, content: String) async throws {
         try await requestVoid("/memory/\(type)", method: "PUT", body: ["content": content])

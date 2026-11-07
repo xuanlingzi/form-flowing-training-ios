@@ -33,6 +33,17 @@ private let tssPresets: [(key: String, label: String, tss: String, desc: String,
     ("race", "赛季", "600+", "赛前备战", "12h+"),
 ]
 
+/// 训练风格（与 web TRAINING_STYLES、后端 calc.TRAINING_STYLES 一致）
+private let trainingStyles: [(key: String, label: String, desc: String)] = [
+    ("balanced", "均衡", "按每周可用时间选金字塔或极化，Z2 打底"),
+    ("intensity_first", "强度优先", "质量课以 FTP 以上短间歇为主，适合时间少、练比赛"),
+]
+
+/// 只有这些目标能选“强度优先”（与后端 calc.INTENSITY_FIRST_GOALS 一致）
+private let styleEligibleGoals: Set<String> = [
+    "ftp_improvement", "vo2max_development", "sprint_power", "general_fitness",
+]
+
 private let weekdayKeys: [(key: Int, label: String, full: String)] = [
     (1, "一", "周一"), (2, "二", "周二"), (3, "三", "周三"),
     (4, "四", "周四"), (5, "五", "周五"), (6, "六", "周六"), (7, "日", "周日"),
@@ -107,6 +118,7 @@ struct GeneratePlanForm {
     var trainDays: Set<Int> = [2, 3, 4, 5, 6, 7]
     var lsdDays: Set<Int> = [7]
     var tssLevel = "moderate"
+    var trainingStyle = "balanced"
     var weeks = 4.0
     var startDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     var goalDetail: [String: String] = [:]
@@ -115,6 +127,11 @@ struct GeneratePlanForm {
     var mode: String = "fixed"  // "fixed" | "goal_driven"
     var targetDate: Date? = nil
     var microCycleDays: Int = 7
+
+    /// 目标不支持强度优先时一律按均衡提交
+    var effectiveStyle: String {
+        styleEligibleGoals.contains(goal) ? trainingStyle : "balanced"
+    }
 }
 
 // MARK: - Main View
@@ -859,8 +876,16 @@ struct TrainingView: View {
             if let targetDate = form.targetDate {
                 req["target_date"] = f.string(from: targetDate)
             }
-            req["goal_metrics"] = buildTrainingGoalDetails(from: form)
-            req["extra_requirements"] = buildExtraRequirements(from: form)
+            // 训练日、长骑日、负荷档位等放进 goal_metrics，续接和复盘时后端也能看到
+            var metrics = buildTrainingGoalDetails(from: form)
+            metrics.merge(buildScheduleFields(from: form)) { _, new in new }
+            if form.effectiveStyle == "intensity_first" {
+                metrics["training_style"] = "intensity_first"
+            }
+            req["goal_metrics"] = metrics
+            if let extra = trimmedExtraRequirements(form) {
+                req["extra_requirements"] = extra
+            }
             
             // 不再先删旧计划：新计划生成成功后由后端归档旧计划（开始日之前的课程保留，
             // 之后的课程连同佳明侧删除），生成失败时旧计划原样保留。
@@ -887,7 +912,11 @@ struct TrainingView: View {
                 "start_date": startDate,
                 "training_goal": form.goal
             ]
-            req["extra_requirements"] = buildExtraRequirements(from: form)
+            req.merge(buildScheduleFields(from: form)) { _, new in new }
+            req["training_style"] = form.effectiveStyle
+            if let extra = trimmedExtraRequirements(form) {
+                req["extra_requirements"] = extra
+            }
             
             // 不再先删旧计划：新计划生成成功后由后端归档旧计划（开始日之前的课程保留，
             // 之后的课程连同佳明侧删除），生成失败时旧计划原样保留。
@@ -948,66 +977,28 @@ struct TrainingView: View {
         return req
     }
 
-    private func buildExtraRequirements(from form: GeneratePlanForm) -> String {
-        let selectedSports = sportOptions
-            .filter { form.sports.contains($0.key) }
-            .map(\.label)
-            .joined(separator: "、")
-        let trainingDays = weekdayKeys
-            .filter { form.trainDays.contains($0.key) }
-            .map(\.full)
-            .joined(separator: "、")
-        let lsdDays = weekdayKeys
-            .filter { form.lsdDays.contains($0.key) && form.trainDays.contains($0.key) }
-            .map(\.full)
-            .joined(separator: "、")
-        let restDays = weekdayKeys
-            .filter { !form.trainDays.contains($0.key) }
-            .map(\.full)
-            .joined(separator: "、")
-        let goalLabel = trainingGoals.first(where: { $0.key == form.goal })?.label ?? form.goal
-        let tssPreset = tssPresets.first(where: { $0.key == form.tssLevel })
-        let extra = form.extraRequirements.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var lines = [
-            "## 运动项目",
-            selectedSports.isEmpty ? "未设置" : selectedSports
+    /// 结构化排课约束。后端据此出排课约束卡、算周时长预算、校验休息日不排课；
+    /// 免费用户的“其他要求”会被后端清空，这些字段不受影响。
+    private func buildScheduleFields(from form: GeneratePlanForm) -> [String: Any] {
+        var fields: [String: Any] = [
+            "sports": sportOptions.map(\.key).filter { form.sports.contains($0) },
+            "train_days": form.trainDays.sorted(),
+            "tss_level": form.tssLevel,
         ]
-
+        let lsdDays = form.lsdDays.intersection(form.trainDays).sorted()
+        if form.sports.contains("cycling") && !lsdDays.isEmpty {
+            fields["lsd_days"] = lsdDays
+        }
         if form.sports.count > 1 {
-            if form.multiSportDay {
-                lines.append("- 同一天可以安排多种运动项目的训练")
-                lines.append("- 每种运动都作为独立的训练课程安排在同一天")
-            } else {
-                lines.append("- 每天只安排一项运动，多个项目在不同日期轮流交替")
-                lines.append("- 合理分配各项目的训练天数")
-            }
+            fields["multi_sport_per_day"] = form.multiSportDay
         }
+        return fields
+    }
 
-        lines.append("")
-        lines.append("## 每周训练安排")
-        lines.append("- 训练目标：\(goalLabel)")
-        lines.append("- 可训练日：\(trainingDays.isEmpty ? "未设置" : trainingDays)（共 \(form.trainDays.count) 天）")
-        lines.append("- 休息日：\(restDays.isEmpty ? "无" : restDays)")
-
-        if form.sports.contains("cycling") {
-            lines.append("- 长距离骑行日（LSD）：\(lsdDays.isEmpty ? "无" : lsdDays)，LSD 日可安排 2-4 小时长骑")
-        }
-
-        lines.append("- 非 LSD 日单次训练时长控制在 60-90 分钟")
-        lines.append("")
-        lines.append("## 训练负荷")
-        lines.append("- 目标周 TSS：\(tssPreset?.tss ?? form.tssLevel)")
-        lines.append("- 预计每周训练时长：\(tssPreset?.hours ?? "--")")
-        lines.append("- 计划周期：\(Int(form.weeks)) 周")
-
-        if !extra.isEmpty {
-            lines.append("")
-            lines.append("## 其他要求")
-            lines.append(extra)
-        }
-
-        return lines.joined(separator: "\n")
+    /// 只提交运动员自己写的“其他要求”，排课信息已走结构化字段
+    private func trimmedExtraRequirements(_ form: GeneratePlanForm) -> String? {
+        let extra = form.extraRequirements.trimmingCharacters(in: .whitespacesAndNewlines)
+        return extra.isEmpty ? nil : extra
     }
     
     private func startPolling(oldPlanId: Int?) {
@@ -1697,6 +1688,13 @@ struct GeneratePlanSheet: View {
                         displayedComponents: .date
                     )
 
+                    // 两种模式都提交负荷档位（目标驱动放进 goal_metrics）
+                    Picker("周训练量", selection: $form.tssLevel) {
+                        ForEach(tssPresets, id: \.key) { preset in
+                            Text("\(preset.label) · TSS \(preset.tss) · \(preset.hours)").tag(preset.key)
+                        }
+                    }
+
                     if form.mode == "goal_driven" {
                         // 目标驱动：目标日期 + 微周期天数
                         DatePicker(
@@ -1716,13 +1714,6 @@ struct GeneratePlanSheet: View {
                             Text("14 天").tag(14)
                         }
                     } else {
-                        // 固定模式：周训练量 + 周数
-                        Picker("周训练量", selection: $form.tssLevel) {
-                            ForEach(tssPresets, id: \.key) { preset in
-                                Text("\(preset.label) · TSS \(preset.tss) · \(preset.hours)").tag(preset.key)
-                            }
-                        }
-
                         Stepper("计划周数：\(Int(form.weeks)) 周", value: $form.weeks, in: 1...12, step: 1)
                     }
                 } header: {
@@ -1736,6 +1727,28 @@ struct GeneratePlanSheet: View {
                 }
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environment(\.calendar, Calendar(identifier: .gregorian))
+
+                if styleEligibleGoals.contains(form.goal) {
+                    Section {
+                        Picker("训练风格", selection: $form.trainingStyle) {
+                            ForEach(trainingStyles, id: \.key) { style in
+                                Text(style.label).tag(style.key)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("训练风格")
+                    } footer: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let style = trainingStyles.first(where: { $0.key == form.trainingStyle }) {
+                                Text(style.desc)
+                            }
+                            if form.trainingStyle == "intensity_first" {
+                                Text("需要功率计，且近期体能（CTL）在 25 以上；条件不满足时本次按均衡风格生成，并在计划里说明原因")
+                            }
+                        }
+                    }
+                }
 
                 Section("其他要求") {
                     TextField(
@@ -1895,6 +1908,14 @@ struct GoalPlanProgressSheet: View {
                         if let targetDate = data.targetDate {
                             LabeledContent("目标日期", value: targetDate)
                         }
+                        ForEach(goalMetricRows(data.goalMetrics), id: \.key) { row in
+                            LabeledContent(row.label, value: row.value)
+                        }
+                    }
+
+                    // 宏观阶段（首块生成时制定）
+                    if let macro = data.macroPlan {
+                        macroPlanSection(macro)
                     }
 
                     // 进度评估
@@ -1979,6 +2000,166 @@ struct GoalPlanProgressSheet: View {
             }
         }
     }
+
+    // MARK: 量化指标
+
+    /// 系统内部字段（周期锚点等）或上面已单独展示的字段，不列出。
+    /// 解码时 convertFromSnakeCase 已把字典 key 转成驼峰。
+    private static let hiddenGoalMetrics: Set<String> = ["goalKind", "targetDate", "cycleAnchor", "cycleBuildWeeks"]
+    private static let goalMetricLabels: [(key: String, label: String)] = [
+        ("currentFtp", "当前 FTP"),
+        ("targetFtp", "目标 FTP"),
+        ("targetZ2Duration", "目标 Z2 时长"),
+        ("targetWeeklyHours", "目标周时长"),
+        ("currentVo2", "当前 VO2max"),
+        ("targetVo2", "目标 VO2max"),
+        ("targetSprintPower", "目标冲刺功率"),
+        ("sprintDuration", "冲刺时长"),
+        ("targetFinishTime", "目标完赛时间"),
+        ("raceDistance", "比赛距离"),
+        ("focusArea", "侧重方向"),
+        ("sports", "项目"),
+        ("trainDays", "训练日"),
+        ("lsdDays", "长距离日"),
+        ("tssLevel", "训练量"),
+        ("multiSportPerDay", "同日多项"),
+        ("trainingStyle", "训练风格"),
+    ]
+
+    private func goalMetricRows(_ metrics: [String: AnyCodableValue]?) -> [(key: String, label: String, value: String)] {
+        guard let metrics else { return [] }
+        let known = Self.goalMetricLabels.compactMap { item -> (key: String, label: String, value: String)? in
+            guard let v = metrics[item.key] else { return nil }
+            return (item.key, item.label, goalMetricText(item.key, v))
+        }
+        let knownKeys = Set(Self.goalMetricLabels.map(\.key))
+        let others = metrics.keys
+            .filter { !knownKeys.contains($0) && !Self.hiddenGoalMetrics.contains($0) }
+            .sorted()
+            .map { (key: $0, label: $0, value: metrics[$0]!.displayText) }
+        return known + others
+    }
+
+    private func goalMetricText(_ key: String, _ value: AnyCodableValue) -> String {
+        func mapList(_ transform: (String) -> String?) -> String {
+            guard case .array(let items) = value else { return value.displayText }
+            if items.isEmpty { return "无" }
+            return items.map { transform($0.displayText) ?? $0.displayText }.joined(separator: "、")
+        }
+        switch key {
+        case "sports":
+            return mapList { s in sportConfig[s]?.label }
+        case "trainDays", "lsdDays":
+            return mapList { s in Int(s).flatMap { d in weekdayKeys.first { $0.key == d }?.full } }
+        case "tssLevel":
+            let s = value.displayText
+            return tssPresets.first { $0.key == s }?.label ?? s
+        case "trainingStyle":
+            let s = value.displayText
+            return trainingStyles.first { $0.key == s }?.label ?? s
+        default:
+            return value.displayText
+        }
+    }
+
+    // MARK: 宏观阶段
+
+    private static let feasibilityLabels: [String: (label: String, color: Color)] = [
+        "feasible": ("目标可行", .green),
+        "tight": ("时间偏紧", .orange),
+        "needs_target_adjustment": ("建议调整目标", .red),
+    ]
+
+    @ViewBuilder
+    private func macroPlanSection(_ macro: MacroPlan) -> some View {
+        let ga = macro.goalAssessment
+        let phases = ga?.phases ?? []
+        if !phases.isEmpty {
+            let currentIndex = macro.position?.phaseIndex
+            Section {
+                if let feas = ga?.feasibility, !feas.isEmpty {
+                    let info = Self.feasibilityLabels[feas] ?? (label: feas, color: Color.secondary)
+                    LabeledContent("可行性") {
+                        Text(info.label)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(info.color)
+                    }
+                }
+                if let date = ga?.estimatedCompletionDate, !date.isEmpty {
+                    LabeledContent("预计达成", value: date)
+                }
+                if let bottleneck = ga?.keyBottleneck, !bottleneck.isEmpty {
+                    Text("主要瓶颈：\(bottleneck)")
+                        .font(.footnote)
+                }
+                ForEach(Array(phases.enumerated()), id: \.offset) { index, phase in
+                    macroPhaseRow(phase: phase, span: phaseSpan(phases, index), isCurrent: currentIndex == index)
+                }
+            } header: {
+                Text("宏观阶段")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let text = macroPositionText(macro, phases: phases) {
+                        Text(text)
+                    }
+                    if let created = macro.createdAt, !created.isEmpty {
+                        Text("首块制定于 \(String(created.prefix(10)))")
+                    }
+                }
+            }
+        }
+    }
+
+    private func macroPhaseRow(phase: MacroPhase, span: String, isCurrent: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(phase.name ?? "-")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isCurrent ? Color.teal : Color.primary)
+                if isCurrent {
+                    Text("当前")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.teal)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.teal.opacity(0.15), in: Capsule())
+                }
+                Spacer()
+                Text(span)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let focus = phase.focus, !focus.isEmpty {
+                Text(focus)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !phase.keyWorkouts.isEmpty {
+                Text("主要课型：\(phase.keyWorkouts.joined(separator: "、"))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+        .listRowBackground(isCurrent ? Color.teal.opacity(0.08) : nil)
+    }
+
+    private func phaseSpan(_ phases: [MacroPhase], _ index: Int) -> String {
+        let n = phases[index].weeks
+        guard n > 0 else { return "-" }
+        let first = 1 + phases[..<index].reduce(0) { $0 + $1.weeks }
+        return "第 \(first)–\(first + n - 1) 周"
+    }
+
+    private func macroPositionText(_ macro: MacroPlan, phases: [MacroPhase]) -> String? {
+        guard let pos = macro.position else { return nil }
+        if let index = pos.phaseIndex, let startWeek = pos.phaseStartWeek, phases.indices.contains(index) {
+            return "今天是计划第 \(pos.week) 周，处于「\(phases[index].name ?? "-")」阶段的第 \(pos.week - startWeek + 1) 周"
+        }
+        return "今天是计划第 \(pos.week) 周，已超出首块规划的 \(pos.phaseEndWeek ?? 0) 周，后续阶段由每次续接时判断"
+    }
+
+    // MARK: 周期时间线
 
     private func blockTimelineRow(block: TrainingPlanBlock) -> some View {
         let status = block.status ?? "planned"
