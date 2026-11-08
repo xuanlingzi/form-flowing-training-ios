@@ -64,6 +64,7 @@ struct ActivitiesView: View {
                 }
             }
             .navigationTitle("运动日志")
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

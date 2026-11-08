@@ -336,6 +336,7 @@ struct TrainingView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("训练课程")
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 if !plans.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {

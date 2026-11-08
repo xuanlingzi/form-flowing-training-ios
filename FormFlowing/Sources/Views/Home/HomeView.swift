@@ -77,6 +77,8 @@ struct HomeView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle(auth.username)
             .navigationSubtitle(greeting)
+            // 大字标题与右上角工具栏同一行，不另占一行
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 if garminStatus?.primaryDevice != nil || garminStatus?.garminSyncedAt != nil {
                     ToolbarItem(placement: .topBarTrailing) {

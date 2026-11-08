@@ -48,6 +48,19 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // 分类切换放在表单顶部，标题栏只留大字标题，与其他 tab 一致
+                Section {
+                    Picker("设置分类", selection: $activeTab) {
+                        Text("档案").tag("profile")
+                        Text("数据源").tag("datasources")
+                        Text("密码").tag("password")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+
                 if let msg = message {
                     Section {
                         Label(msg.text, systemImage: msg.type == "success" ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -62,17 +75,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("设置")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("设置分类", selection: $activeTab) {
-                        Text("档案").tag("profile")
-                        Text("数据源").tag("datasources")
-                        Text("密码").tag("password")
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
+            .toolbarTitleDisplayMode(.inlineLarge)
             .task {
                 if let last = lastLoadedAt, Date().timeIntervalSince(last) < 60 { return }
                 await loadData()
